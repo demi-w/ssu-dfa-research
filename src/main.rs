@@ -1,87 +1,39 @@
-#![allow(warnings)] 
 use std::hash::Hash;
-use std::fmt::{self, write, format};
-use std::ops::Index;
-use automata::dfa::{Node, self};
 use bitvec::prelude::*;
 use petgraph::algo::toposort;
-use petgraph::data::Build;
-use petgraph::{prelude::*, visit};
-use crossbeam::queue::{SegQueue, ArrayQueue};
-use petgraph::graph::{NodeIndex, UnGraph, DiGraph};
-use petgraph::dot::{Dot, Config};
-use petgraph::visit::{Reversed, IntoEdgesDirected, IntoNeighbors, VisitMap};
-use serde::__private::de;
-use strum_macros::EnumIter;
-//use bit_set::Vec<bool>;
-use std::mem;
-use crossbeam;
+
+use petgraph::prelude::*;
+use crossbeam::queue::SegQueue;
+use petgraph::graph::{NodeIndex, DiGraph};
+use petgraph::dot::Dot;
+
 use std::collections::{HashMap,HashSet};
 use petgraph::Graph;
 use std::fs;
 use std::time;
 use std::sync::Arc;
-use std::fmt::Display;
 extern crate xml;
 use std::fs::File;
 use std::io::{self, Write};
 use std::fmt::Debug;
 use rand::prelude::*;
 
-use petgraph::algo::{tarjan_scc,condensation};
+use petgraph::algo::condensation;
 
 use serde_json::Result;
 
-use xml::writer::{EventWriter, EmitterConfig, XmlEvent, Result as XmlResult};
-use std::marker::PhantomData;
+use xml::writer::{EmitterConfig, XmlEvent};
 use std::time::Instant;
 
 
 use serde::{Deserialize, Serialize};
 use std::thread;
-#[macro_use]
-extern crate lazy_static;
 
 const WORKERS : usize = 37;
 
-const SIGNATURE_K : usize = 6;
-
-const SIGNATURE_LENGTH : usize = (2 << SIGNATURE_K)-1; // (2 ^ (SIGNATURE_K+1)) - 1. 
-// e.g. K = 5; (2^6) - 1; the +1 comes from the way bitshifting works
-//Total number of items in the signature, currently hardcoded to all binary options of len 0 <= x <= SIGNATURE_K
-
 type SymbolIdx = u8;
 
-lazy_static! {
-    
-static ref SIGNATURE_ELEMENTS : [Vec<bool>;SIGNATURE_LENGTH] = {
-    let mut start_index = 0;
-    const EMPTY_VEC : Vec<bool> = vec![];
-    let mut result : [Vec<bool>;SIGNATURE_LENGTH] = [EMPTY_VEC;SIGNATURE_LENGTH];
-    let mut end_index = 1;
-    let mut new_index = 1;
-    for _ in 0..SIGNATURE_K {
-        for i in start_index..end_index{
-            result[new_index] = result[i].clone();
-            result[new_index].push(false);
-            new_index += 1;
-            result[new_index] = result[i].clone();
-            result[new_index].push(true);
-            new_index += 1;
-        }
-        start_index = end_index;
-        end_index = new_index;
-    }
-    result
-};
-}
 
-
-#[derive(Clone, Debug)]
-struct SignatureElement {
-    board : Vec<bool>,
-    signature : Vec<bool>
-}
 #[derive(Clone,Serialize,Deserialize,Debug)]
 struct SymbolSet {
     length : usize,
@@ -506,7 +458,7 @@ impl SRSTranslator {
             ss_debug_graph.add_edge(edge.source(), edge.target(), ());
         }
         let mut file = File::create("link_graph_debug/ss.dot").unwrap();
-        file.write_fmt(format_args!("{:?}",Dot::new(&ss_debug_graph)));
+        file.write_fmt(format_args!("{:?}",Dot::new(&ss_debug_graph))).unwrap();
         /* 
         for i in self.ss_link_graph.node_indices() {
             //Calculating all ancestors
@@ -631,7 +583,7 @@ impl SRSTranslator {
         self.add_set_to_minkids(&mut dfa_graph[lhs].minkids, &intermediary_minkids)
     }
 
-    fn add_link(&self, mut link_graph : &mut DiGraph<(),(Vec<SymbolIdx>,Vec<SymbolIdx>)>, lhs : NodeIndex, rhs : NodeIndex, lhs_obligation : &[SymbolIdx], rhs_obligation : &[SymbolIdx]) {
+    fn add_link(&self, link_graph : &mut DiGraph<(),(Vec<SymbolIdx>,Vec<SymbolIdx>)>, lhs : NodeIndex, rhs : NodeIndex, lhs_obligation : &[SymbolIdx], rhs_obligation : &[SymbolIdx]) {
         let mut death_row = vec![];
         let mut should_add = true;
 
@@ -685,96 +637,7 @@ impl SRSTranslator {
         signature_set
     }
 
-    /* 
-    fn dfs_solver(&self, start_board : &Vec<S>) -> bool {
-        match self.dfs_pathed_helper(0, &mut HashSet::new(), start_board) {
-            Some(_) => true,
-            None => false
-        }
-    }
     
-    fn dfs_pather(&self, start_board : &Vec<S>) -> Option<Vec<usize>> {
-        return match self.dfs_pathed_helper(0, &mut HashSet::new(), start_board) {
-            None => {None}
-            Some(mut path) => {path.reverse();Some(path)}
-        }
-    }
-    //this is not fucking happening today lmao
-    fn path_decycler(&self, path : Vec<usize>) {
-        let mut match_length : Vec<usize> = vec![0;path.len()/2];
-        let mut new_match_length : Vec<usize> = vec![0;path.len()/2];
-        let mut new_path : Vec<usize> = vec![];
-        for idx in 0..path.len() {
-            std::mem::swap(&mut match_length, &mut new_match_length);
-            new_match_length = vec![0;path.len()/2];
-            for cycle in 0..path.len()/2 {
-                if cycle*2 + idx < path.len()   {
-                    let mut does_match = true;
-                    for cycle_check in 0..cycle {
-                        does_match &= path[idx+cycle_check] == path[idx+cycle+cycle_check];
-                    }
-                    if does_match {
-                        new_match_length[cycle] += 1;
-                    } else {
-                        new_match_length[cycle] = 0;
-                    }
-                }else{
-                    new_match_length[cycle] = 0;
-                }
-            }
-            if new_match_length.iter().all(|x| *x == 0) {
-                let mut max = 0;
-                let mut max_idx = 0;
-                for (idx,cycle) in match_length.iter().enumerate() {
-                    //max length of 2-cycle is 4 even if match length is 5
-                    if (cycle/idx)*idx > max {
-                        max = *cycle;
-                        max_idx = idx;
-                    }
-                }
-                
-            }
-        }
-    }
-
-    fn dfs_pathed_helper(&self, cursor : usize, known_states : &mut HashSet::<(usize,Vec<S>)>, board : &Vec<S>) -> Option<Vec<usize>> {
-        let mut next_boards : Vec<(Vec<usize>,usize,Vec<S>)> = Vec::new();
-        if self.goal.contains(&board) {
-            return Some(vec![]);
-        }
-        let mut index = 0;
-        let mut buffer : Vec<S> = Vec::new();
-        while index < board.len() && index < self.rules.min_input - 1{
-            buffer.push_back(board[index]);
-            index += 1;
-        }
-        while index < board.len(){
-           
-                    if !known_states.contains(&(cursor,new_board.clone())) {
-                        known_states.insert((cursor,new_board.clone()));
-                        let mut rules_used = vec![rule_idx+2];
-                        let l_or_r = match cursor > copy_index {
-                            true => 0,
-                            false => 1
-                        };
-                        for _ in 0..(cursor as i32 - copy_index as i32).abs() {
-                            rules_used.push(l_or_r);
-                        }
-                        next_boards.push((rules_used,copy_index,new_board));
-                    }
-                }
-            }
-            index += 1;
-        }
-        while let Some(mut i) = next_boards.pop() {
-            if let Some(mut path) = self.dfs_pathed_helper(i.1, known_states, &i.2) {
-                path.append(&mut i.0);
-                return Some(path);
-            }
-        }
-        None
-    }
-    */
     //Way less memory usage because no addition/checking HashMap.
     //Also paralellizable, hence "batch"
     fn bfs_solver_batch(&self, start_board : &Vec<SymbolIdx>) -> bool { 
@@ -940,7 +803,6 @@ impl SRSTranslator {
                 None => {std::thread::sleep(time::Duration::from_millis(10));}
             }
         }
-        //println!("{} {}",output.len(),input.len());
         result
     }
 
@@ -1169,7 +1031,6 @@ fn dfa_with_sig_set_subset(&mut self, sig_set_size : usize) -> DFA {
 
     self.sig_sets.push(bitvec![0;sig_set.len()]);
     let mut start_values = bitvec![0;sig_set.len()];
-    //println!("{:?},{:?}",start_known,start_values);
     self.sig_with_set_sub(&vec![], &sig_set, 0);
     self.trans_table.push((1..=self.symbol_set.length).collect());
     self.unique_sigs.insert(self.sig_sets[0].clone(),0);
@@ -1194,7 +1055,6 @@ fn dfa_with_sig_set_subset(&mut self, sig_set_size : usize) -> DFA {
         print!("{}\r",update_string);
         io::stdout().flush().unwrap();
 
-        //println!("{:?}",self.sig_sets.last().unwrap());
         //First step is populating self.sig_sets and self.solved_yet 
         
         //trans_table should already be correct? make sure to that when adding elements
@@ -1289,21 +1149,6 @@ fn dfa_with_sig_set_subset(&mut self, sig_set_size : usize) -> DFA {
             if origin >= last_known {
                 continue
             }
-            /* 
-            let mut visit = HashSet::new();
-            visit.insert(origin_node);
-            let mut explore = vec![origin_node];
-            
-            while let Some(nx) = explore.pop() {
-                for neighbor in link_graph.neighbors_directed(nx,Direction::Outgoing) {
-                    if link_graph[neighbor][0] >= last_known && !visit.contains(&neighbor) {
-                        visit.insert(neighbor);
-                        explore.push(neighbor);
-
-                        self.solved_yet[link_graph[neighbor][0] - last_known] |= !self.sig_sets[origin].clone();
-                    }
-                }
-            } */
 
             let mut visit = HashSet::new();
             visit.insert(origin_node);
@@ -1757,11 +1602,6 @@ fn dfa_with_sig_set_reverse(&mut self, sig_set : &Vec<Vec<SymbolIdx>>) -> DFA {
         //5 HERE IS ALSO A HORRIFIC HACK. WE ARE BEYOND THE LOOKING GLASS. WE ARE FIGHTING FOR SURVIVAL.
          
         let mut starting_boards = vec![];
-        /*
-        for i in 0..5 {
-            starting_boards.push(vec![0;old_boards[0].1.len()+i]);
-        }*/
-         
         for masta in (old_boards[0].1.len()+1)..(old_boards[0].1.len()+7) {
             for l in 0..masta {
                 let mut prefix = vec![];
@@ -1789,25 +1629,7 @@ fn dfa_with_sig_set_reverse(&mut self, sig_set : &Vec<Vec<SymbolIdx>>) -> DFA {
         for (_,board) in &old_boards{
             useful_prefixes.insert(board.clone());
          }
-        //accepted_boards.retain(|k| useful_prefixes.contains(&k[0..old_boards[0].1.len()]));
-        
-
-        /* 
-        for (_,board) in &old_boards{
-            for sym_idx in 0..(self.symbol_set.length as SymbolIdx){
-                for sig_board in sig_set{
-                    let mut test_board = board.clone();
-                    test_board.push(sym_idx);
-                    test_board.extend(sig_board.clone());
-                    let bfs_result = self.bfs_solver(&test_board);
-                    let rev_result = accepted_boards.contains(&test_board);
-                    if bfs_result != rev_result {
-                        println!("BFS {} | REV {}: {:?}", bfs_result, rev_result, test_board);
-                        break
-                    }
-                }
-            }
-         }*/
+    
         let iter_sig_time = Instant::now();
 
         for (start_idx,board) in &old_boards {
@@ -1872,7 +1694,6 @@ fn verify_to_len(&mut self,test_dfa : DFA, n:usize) -> bool{
     let mut signature_set_old : Vec<Vec<SymbolIdx>> = vec![];
     let mut signature_set_new : Vec<Vec<SymbolIdx>> = vec![vec![]];
     for _ in 0..n {
-        //println!("iter started");
         std::mem::swap(&mut signature_set_old, &mut signature_set_new);
         signature_set_new.clear();
         for (idx,i) in signature_set_old.iter().enumerate() {
@@ -2213,7 +2034,6 @@ fn build_threerulesolver() -> SRSTranslator {
                      (vec![0,1,2],vec![2,0,0]),
                      (vec![2,0,1],vec![0,2,0]),
                      (vec![1,0,2],vec![0,2,0]),
-                     //(Vec::from(vec![Binary::One,Binary::Zero,Binary::One]),Vec::from(vec![Binary::Zero,Binary::One,Binary::Zero])),
         ],
         b_symbol_set.clone()
     );
@@ -2236,7 +2056,6 @@ fn build_defaultsolver() -> SRSTranslator {
                      (vec![0,1,1],vec![1,0,0]),
                      (vec![2,1,0],vec![0,0,2]),
                      (vec![0,1,2],vec![2,0,0]),
-                     //(Vec::from(vec![Binary::One,Binary::Zero,Binary::One]),Vec::from(vec![Binary::Zero,Binary::One,Binary::Zero])),
         ],
         b_symbol_set.clone()
     );
@@ -2296,8 +2115,6 @@ fn build_default1dpeg() -> SRSTranslator {
     let ruleset = Ruleset::new(
         vec![(vec![1,1,0],vec![0,0,1]),
                      (vec![0,1,1],vec![1,0,0]),
-                     //(vec![1,0,1],vec![0,1,0])
-                     //(Vec::from(vec![Binary::One,Binary::Zero,Binary::One]),Vec::from(vec![Binary::Zero,Binary::One,Binary::Zero])),
         ],
         b_symbol_set.clone()
     );
@@ -2320,7 +2137,6 @@ fn build_threerule1dpeg() -> SRSTranslator {
         vec![(vec![1,1,0],vec![0,0,1]),
                      (vec![0,1,1],vec![1,0,0]),
                      (vec![1,0,1],vec![0,1,0])
-                     //(Vec::from(vec![Binary::One,Binary::Zero,Binary::One]),Vec::from(vec![Binary::Zero,Binary::One,Binary::Zero])),
         ],
         b_symbol_set.clone()
     );
@@ -2432,39 +2248,6 @@ fn build_flipx3() -> SRSTranslator {
                             vert_ends.push(new_vert_end);
                         }
                     }
-                    /* 
-                    println!("god i am dumb");
-                    //If we're not, go through each rule
-                    for start_idx in 0..cur_vert_rules {
-                        //For each non-zero character
-                        
-                        //Don't need to add 0 index to our options bc it's assumed!
-                        /* 
-                        for new_sym in 1..b_symbol_set.length {
-                            let mut new_vert_start = vert_starts[start_idx].clone();
-                            let mut new_vert_end = vert_ends[start_idx].clone();
-                            //This is the issue!!!!
-                            for vert_idx in 0..vert_starts[start_idx].len() {
-                                new_vert_start[vert_idx] += new_sym*pow_num;
-                            }
-                            for vert_idx in 0..vert_ends[start_idx].len() {
-                                new_vert_end[vert_idx] += new_sym*pow_num;
-                            }
-                            vert_starts.push(new_vert_start);
-                            vert_ends.push(new_vert_end);
-                        }
-                        */
-                        for new_sym in 1..b_symbol_set.length {
-                            let mut new_vert_start = vert_starts[start_idx].clone();
-                            let mut new_vert_end = vert_ends[start_idx].clone();
-                            //This is the issue!!!!
-                            new_vert_start[j] += new_sym*pow_num;
-                            new_vert_end[j] += new_sym*pow_num;
-                            vert_starts.push(new_vert_start);
-                            vert_ends.push(new_vert_end);
-                        }
-                    }
-                    */
                 }
                 
             }
@@ -2487,16 +2270,6 @@ fn build_flipx3() -> SRSTranslator {
         accepting_states : HashSet::from_iter(vec![0]),
         symbol_set : by_k_symbol_set.clone()
     };
-
-    
-    /* 
-    let goal_dfa = DFA {
-        starting_state : 0,
-        state_transitions : vec![vec![0,1,1,1,1,1,1,1],vec![1,1,1,1,1,1,1,1]],
-        accepting_states : HashSet::from_iter(vec![0]),
-        symbol_set : by_k_symbol_set.clone()
-    };
-    */
     
     SRSTranslator::new(ruleset,goal_dfa)
 }
@@ -2510,13 +2283,6 @@ fn build_default2dpegx3 () -> SRSTranslator {
     let ruleset = Ruleset::new(
         vec![(vec![1,1,0],vec![0,0,1]),
                      (vec![0,1,1],vec![1,0,0]),
-                     //(vec![1,0,1],vec![0,1,0]),
-                     //(vec![0,1,2],vec![2,0,0]),
-                     //(vec![2,1,0],vec![0,0,2]),
-                     //(vec![2,0,1],vec![0,2,0]),
-                     //(vec![1,0,2],vec![0,2,0]),
-                     //(vec![1,0,1],vec![0,1,0])
-                     //(Vec::from(vec![Binary::One,Binary::Zero,Binary::One]),Vec::from(vec![Binary::Zero,Binary::One,Binary::Zero])),
         ],
         b_symbol_set.clone()
     );
@@ -2582,39 +2348,6 @@ fn build_default2dpegx3 () -> SRSTranslator {
                             vert_ends.push(new_vert_end);
                         }
                     }
-                    /* 
-                    println!("god i am dumb");
-                    //If we're not, go through each rule
-                    for start_idx in 0..cur_vert_rules {
-                        //For each non-zero character
-                        
-                        //Don't need to add 0 index to our options bc it's assumed!
-                        /* 
-                        for new_sym in 1..b_symbol_set.length {
-                            let mut new_vert_start = vert_starts[start_idx].clone();
-                            let mut new_vert_end = vert_ends[start_idx].clone();
-                            //This is the issue!!!!
-                            for vert_idx in 0..vert_starts[start_idx].len() {
-                                new_vert_start[vert_idx] += new_sym*pow_num;
-                            }
-                            for vert_idx in 0..vert_ends[start_idx].len() {
-                                new_vert_end[vert_idx] += new_sym*pow_num;
-                            }
-                            vert_starts.push(new_vert_start);
-                            vert_ends.push(new_vert_end);
-                        }
-                        */
-                        for new_sym in 1..b_symbol_set.length {
-                            let mut new_vert_start = vert_starts[start_idx].clone();
-                            let mut new_vert_end = vert_ends[start_idx].clone();
-                            //This is the issue!!!!
-                            new_vert_start[j] += new_sym*pow_num;
-                            new_vert_end[j] += new_sym*pow_num;
-                            vert_starts.push(new_vert_start);
-                            vert_ends.push(new_vert_end);
-                        }
-                    }
-                    */
                 }
                 
             }
@@ -2630,14 +2363,6 @@ fn build_default2dpegx3 () -> SRSTranslator {
     
     let ruleset = Ruleset::new(new_rules,by_k_symbol_set.clone());
     
-    /*  let goal_dfa = DFA {
-        starting_state : 0,
-        state_transitions : vec![vec![0,1,1,2,1,2,2,2],vec![1,2,2,2,2,2,2,2],vec![2,2,2,2,2,2,2,2]],
-        accepting_states : HashSet::from_iter(vec![1]),
-        symbol_set : by_k_symbol_set.clone()
-    };
-
-    */
     let root_dfa = DFA::load("default1dpeg").unwrap();
 
     let mut trans_table = vec![vec![1,2,2+16,2+16*2,2+16*2, 10,2,10],vec![1,3,3+16,3+16*2,3+16*2, 10,3,10]];
@@ -2677,7 +2402,7 @@ fn build_default2dpegx3 () -> SRSTranslator {
 
 //Testing subset method :((
 
-/* 
+
 fn main() {
     println!("default 1d");
     let mut translator = build_default1dpeg();
@@ -2700,459 +2425,4 @@ fn main() {
     println!("hope and prayer");
     let mut translator = build_2xnswap();
     assert!(translator.dfa_with_sig_set_minkid(12) == DFA::load("2xnswap").unwrap(), "2xnswap failed");
-} */
-
-
-fn main() {
-
-    let mut translator = build_threerulesolver();
-    let mut sub_dfa = translator.dfa_with_sig_set_subset(5);
-    
-    sub_dfa.jflap_save("confusion1");
-    let mut sub_ss = translator.sig_sets;
-    translator.sig_sets = vec![];
-    let mut min_dfa = translator.dfa_with_sig_set_minkid(5);
-    min_dfa.jflap_save("confusion2");
-    let sig_set = translator.build_sig_k(5);
-    let equality_results = min_dfa.ss_eq(&sub_dfa,  &translator.sig_sets,&sub_ss);
-    for difference in &equality_results {
-        println!("{} of mindfa is wrong, should be equivalent to {} in sub_dfa",difference.0,difference.1);
-        let nice_list : Vec<_> = difference.2.iter().map(|x| symbols_to_string(&sig_set[*x])).collect();
-        let naughty_list : Vec<_> = difference.3.iter().map(|x| symbols_to_string(&sig_set[*x])).collect();
-        println!("List of elements that shouldn't have been in the sig set but were: {:?}",nice_list);
-        println!("List of elements that should have been in the sig set but weren't: {:?}",naughty_list);
-    }
-    //Attempting to find the breakages in the rule graph (assumes length-preserving)
-
-    //Also, just because all elements are Cs doesn't imply an issue in this code
-    //It tries to build an example case and (currently) can only build something that gets to the appropriate
-    //state in one DFA, or another.
-    println!("{:?}", translator.solve_string(&sub_dfa, &vec![2,1,0,1,1,1,1]));
-
-    let mut min_len = usize::MAX;
-    for difference in equality_results {
-        //this is currently the failure state. complaints directed @ this node are annoying
-        //let shortest_str: Vec<u8> = min_dfa.shortest_path_to_pair(&sub_dfa, difference.0,difference.1);
-        let shortest_str: Vec<u8> = min_dfa.shortest_path_to_pair(&sub_dfa, difference.0, difference.1);
-        min_len = usize::min(min_len,shortest_str.len());
-        println!("{} {} {}",difference.0,difference.1, symbols_to_string(&shortest_str));
-        /*if shortest_str.len() > 6 {
-            continue
-        }*/
-        /*if difference.0 != 11 || difference.1 != 8 {
-            continue
-        }
-
-        for missing_str in difference.2 {
-            let mut example_str = shortest_str.clone();
-            example_str.extend(sig_set[missing_str].iter());
-            let mut solution = translator.solve_string(&min_dfa, &example_str);
-            let mut answer_idx = solution.len();
-            let missing_str_len = sig_set[missing_str].len();
-            println!("broken ss element: {}",symbols_to_string(&sig_set[missing_str]));
-            while answer_idx > 0 {
-                answer_idx -= 1;
-                let intermediary_state = min_dfa.final_state(&solution[answer_idx][..(solution[answer_idx].len()-missing_str_len)].to_vec());
-                let is_intermediary_ss_correct = sub_ss[intermediary_state][translator.symbol_set.find_in_sig_set(solution[answer_idx][(solution[answer_idx].len()-missing_str_len)..].iter())];
-                if is_intermediary_ss_correct {
-                    print!("C{:3}: ",intermediary_state);
-                }else{
-                    print!("B{:3}: ",intermediary_state);
-                }
-                println!("{}|{}",symbols_to_string(&solution[answer_idx][..(solution[answer_idx].len()-missing_str_len)].to_vec()),symbols_to_string(&solution[answer_idx][(solution[answer_idx].len()-missing_str_len)..].to_vec()));
-            }
-            println!("");
-            
-        } */
-    }
-    println!("{}",min_len);
 } 
-
-
-
-//Building 2xn n swap
-
-/* 
-fn main() {
-    let mut translator = build_2xnswap();
-    let mut k = 11;
-    println!("K: {}",k);
-    let mut possible_dfa = translator.dfa_with_sig_set_minkid(k);
-    //let dfa = DFA::load("2xnswap").unwrap();
-    //possible_dfa.save("3xkdefault");
-    k += 1;
-    println!("K: {}",k);
-    let mut new_possible_dfa = translator.dfa_with_sig_set_minkid(k);
-    //new_possible_dfa.save("3xkdefault");
-    while possible_dfa != new_possible_dfa {
-        //possible_dfa = new_possible_dfa;
-        k += 1;
-        println!("K: {}",k);
-        new_possible_dfa = translator.dfa_with_sig_set_minkid(k);
-        //new_possible_dfa.save("3xkdefault");
-    }
-    
-    //translator.random_tests(dfa, 8,10000);
-    
-}
-*/
-//Summary information about 2xn swap DFA
-/* 
-fn main () {
-    let swap_dfa = DFA::load("2xnswap").unwrap();
-    println!("{} States", swap_dfa.state_transitions.len());
-    let mut visited = HashSet::new();
-    visited.insert(0);
-    let mut recent = vec![0];
-    let mut second_recent = vec![];
-    let mut diameter = 0;
-    while recent.len() > 0 {
-        diameter += 1;
-        std::mem::swap(&mut second_recent, &mut recent);
-        recent.clear();
-        for state in &second_recent {
-            for new_state in &swap_dfa.state_transitions[*state] {
-                if visited.insert(*new_state) {
-                    recent.push(*new_state);
-                }
-            }
-        }
-    }
-    diameter -= 1;
-    println!("Diameter of {}", diameter);
-} */
-
-/* 
-fn main() {
-    let mut translator = build_2xnswap();
-    let swap_dfa = DFA::load("2xnswap").unwrap();
-    translator.verify_to_len(swap_dfa, 16);
-    //translator.random_tests(swap_dfa, 32, 100);
-}
-*/
-// Analysis of state swap on single SRS move
-
-/* 
-fn main() {
-    let mut translator = build_threerulesolver();
-    let created_dfa = DFA::load("threerulesolver").unwrap();
-    //created_dfa.jflap_save("default1dpeg");
-
-    let mut possible_graph : HashSet<(usize,usize)>= HashSet::new();
-    let mut possible_check = vec![false;created_dfa.state_transitions.len()];
-    let mut possible_first = vec![vec![];created_dfa.state_transitions.len()];
-
-    let mut possible_always : Vec<HashSet::<usize>>= vec![HashSet::new();created_dfa.state_transitions.len()];
-    let mut possible_ever : Vec<HashSet::<usize>>= vec![HashSet::new();created_dfa.state_transitions.len()];
-
-    for string in translator.build_sig_k(12){
-        let result_state = created_dfa.final_state(&string);
-        let mut result_options = HashSet::new();
-        for option in translator.rules.single_rule_hash(&string) {
-            result_options.insert(created_dfa.final_state(&option));
-            if possible_graph.insert((result_state,created_dfa.final_state(&option)))
-                && possible_check[result_state] {
-                    println!("failed on {:?} with old string {:?} result state {} and new state {}", 
-                    string,
-                    possible_first[result_state],
-                    result_state,
-                    created_dfa.final_state(&option)
-                );
-            } 
-        }
-        if !possible_check[result_state] {
-            possible_check[result_state] = true;
-            possible_first[result_state] = string;
-            possible_always[result_state] = result_options.clone();
-            possible_ever[result_state] = result_options;
-        } else {
-
-            let mut final_set = HashSet::new();
-            for x in result_options.intersection(&possible_always[result_state]) {
-                final_set.insert(*x);
-            }
-            possible_always[result_state] = final_set;
-            let mut final_set = HashSet::new();
-            for x in result_options.union(&possible_ever[result_state]) {
-                final_set.insert(*x);
-            }
-            //possible_ever[result_state] = final_set;
-        }
-
-    }
-    let mut too_high_for_typecasting = vec![];
-    for i in possible_graph{
-        too_high_for_typecasting.push(i);
-    }
-    //let g = UnGraph::<usize, ()>::from_edges(&too_high_for_typecasting);
-    println!("{}",created_dfa.state_transitions.len());
-    println!("{:?}",possible_ever);
-}*/
-
-
-// Principled graph creation (as a warmup to the new method)
-/* 
-fn main() {
-    let mut translator = build_threerulesolver();
-    let created_dfa = DFA::load("threerulesolver").unwrap();
-    //created_dfa.jflap_save("default1dpeg");
-
-    let mut edges : HashSet::<(usize,usize)> = HashSet::new();
-    for origin in 0..created_dfa.state_transitions.len() {
-        for rule in &translator.rules.rules {
-            let mut parent = origin;
-            let mut child = origin;
-            for i in 0..rule.0.len() {
-                parent = created_dfa.state_transitions[parent][rule.0[i] as usize];
-                child = created_dfa.state_transitions[child][rule.1[i] as usize];
-            }
-            edges.insert((parent,child));
-        }  
-    }
-    let mut old_edges = HashSet::new();
-    let mut new_edges = edges.clone();
-
-    while new_edges.len() > 0 {
-        std::mem::swap(&mut old_edges, &mut new_edges);
-        old_edges.clear();
-        for edge in &old_edges {
-            for sym in 0..translator.symbol_set.length {
-                let new_parent = created_dfa.state_transitions[edge.0][sym as usize];
-                let new_child = created_dfa.state_transitions[edge.1][sym as usize];
-                if edges.insert((new_parent,new_child)) {
-                    new_edges.insert((new_parent,new_child));
-                }
-            }
-        }
-    }
-
-    let g = DiGraph::<usize, (), usize>::from_edges(edges);
-    let mut file = File::create("fungraph.dot").unwrap();
-    let output = format!("{:?}",Dot::with_config(&g,&[Config::EdgeNoLabel]));
-    file.write(output.as_bytes());
-    println!("{}",created_dfa.state_transitions.len());
-
-}*/
-/* 
-fn main() {
-
-    /*
-    let c_ruleset = Ruleset::<Collatz> {
-        min_input : 2,
-        max_input : 2,
-        rules : vec![
-            //Carry & start
-            (Vec::from(vec![Collatz::Start,Collatz::Carry2]),Vec::from(vec![Collatz::Start,Collatz::One,Collatz::Zero])),
-            (Vec::from(vec![Collatz::Start,Collatz::Carry1]),Vec::from(vec![Collatz::Start,Collatz::One])),
-            (Vec::from(vec![Collatz::Start,Collatz::Carry0]),Vec::from(vec![Collatz::Start,Collatz::Zero])),   
-            (Vec::from(vec![Collatz::Start,Collatz::Zero]),Vec::from(vec![Collatz::Zero,Collatz::Start])),   
-
-            //Carry & next
-            (Vec::from(vec![Collatz::Zero,Collatz::Carry0]),Vec::from(vec![Collatz::Carry0,Collatz::Zero])),
-            (Vec::from(vec![Collatz::One,Collatz::Carry0]),Vec::from(vec![Collatz::Carry1,Collatz::One])),
-            (Vec::from(vec![Collatz::Zero,Collatz::Carry1]),Vec::from(vec![Collatz::Carry0,Collatz::One])),
-            (Vec::from(vec![Collatz::One,Collatz::Carry1]),Vec::from(vec![Collatz::Carry2,Collatz::Zero])),
-            (Vec::from(vec![Collatz::Zero,Collatz::Carry2]),Vec::from(vec![Collatz::Carry1,Collatz::Zero])),
-            (Vec::from(vec![Collatz::One,Collatz::Carry2]),Vec::from(vec![Collatz::Carry2,Collatz::One])),
-
-            //Finish
-            (Vec::from(vec![Collatz::Zero,Collatz::Finish]),Vec::from(vec![Collatz::Finish])),
-            (Vec::from(vec![Collatz::One,Collatz::Finish]),Vec::from(vec![Collatz::Carry2,Collatz::Finish])),
-            ]
-    };
-    let c_goal_dfa = DFA::<Collatz> {
-        symbols : all::<Collatz>().collect(),
-        starting_state : 0,
-        state_transitions : vec![vec![4,4,4,0,4,1,4],vec![4,4,4,4,2,4,4],vec![4,4,4,4,4,4,3],vec![4,4,4,3,4,4,4],vec![4,4,4,4,4,4,4]],
-        accepting_states : HashSet::from_iter(vec![2,3])
-        
-    };
-    let mut c_translator = SRSTranslator {
-        rules : c_ruleset,
-        goal : c_goal_dfa,
-        board_solutions : HashMap::new()
-    };
-    
-    c_translator.bfs_solver(&vec![Collatz::Start,Collatz::One,Collatz::Zero,Collatz::Finish]);
-    let c_dfa = c_translator.dfa_with_sig_set(&SRSTranslator::<Collatz>::build_sig_k(7));
-    c_translator.verify_to_len(c_dfa,12); */
-    //c_dfa.save("collatz");
-    /* 
-    
-    let possible_dfa = translator.dfa_with_sig_set(&translator.build_sig_k(5));
-    possible_dfa.save("default1dpeg");
-    */
-
-
-    //Three-rule
-    
-    
-    
-   /*
-    println!("This atrocity has {} rules", translator.rules.rules.len());
-    //translator.verify_to_len(DFA::load("default2dpegx3").unwrap(), 8);
-    let possible_dfa = translator.dfa_with_sig_set(&translator.build_sig_k(5));
-    possible_dfa.save("flip");
-    
-    */
-        let b_symbol_set = SymbolSet::new(vec!["0".to_owned(),"1".to_owned()]);
-    
-    
-    for (start, end) in &new_rules {
-        println!("{:?} -> {:?}",start,end);
-    }
-    
-    
-    println!("This atrocity has {} rules", translator.rules.rules.len());
-    //translator.verify_to_len(DFA::load("default2dpegx3").unwrap(), 8);
-    let possible_dfa = translator.dfa_with_sig_set_subset(5);
-    
-    //possible_dfa.save("flipx3"); 
-    //possible_dfa.jflap_save("flipx3");
-    //let possible_dfa = DFA::load("flipx3").unwrap();
-    //translator.verify_to_len(possible_dfa,8);
-
-    //println!("{:?}",new_rules);
-    
-    
-    /* 
-    let goal_dfa = DFA {
-        starting_state : 0,
-        state_transitions : vec![vec![0,1,1],vec![1,2,2],vec![2,2,2]],
-        accepting_states : HashSet::from_iter(vec![1]),
-        symbol_set : b_symbol_set.clone()
-    };
-    let mut translator = SRSTranslator {
-        rules : ruleset,
-        goal : goal_dfa,
-        board_solutions : HashMap::new(),
-        symbol_set : b_symbol_set
-    };
-
-    //println!("{:?}", translator.dfs_pather(&vec![Binary::Zero,Binary::One,Binary::Zero,Binary::One,Binary::One]).unwrap());
-    //return;
-
-    let possible_dfa = translator.dfa_with_sig_set(&translator.build_sig_k(5));
-    */
-    //translator.verify_to_len(possible_dfa, 20);
-    //possible_dfa.save("threerule1dpeg");
-    /* 
-    let k = 0;
-
-    for k in 0..20 {
-        let graph = SRS_groups(&mut translator, k);
-        println!("{} roots at length {}",graph.externals(petgraph::Direction::Incoming).count(),k);
-        println!("{} leaves at length {}",graph.externals(petgraph::Direction::Outgoing).count(),k);
-    }*/
-    
-    
-    //fs::write("output.dot", dot_parser(format!("{:?}",Dot::new(&graph)))).expect("Unable to write file");
-    /* 
-    let ruleset = Ruleset::<Ternary> {
-        min_input : 3,
-        max_input : 3,
-        rules : vec![(Vec::from(vec![Ternary::One,Ternary::One,Ternary::Zero]),Vec::from(vec![Ternary::Zero,Ternary::Zero,Ternary::One])),
-                     (Vec::from(vec![Ternary::Zero,Ternary::One,Ternary::One]),Vec::from(vec![Ternary::One,Ternary::Zero,Ternary::Zero])),
-                     (Vec::from(vec![Ternary::One,Ternary::Zero,Ternary::One]),Vec::from(vec![Ternary::Zero,Ternary::One,Ternary::Zero])),
-
-                     //special rules
-                     (Vec::from(vec![Ternary::Two,Ternary::One,Ternary::Zero]),Vec::from(vec![Ternary::Zero,Ternary::Zero,Ternary::Two])),
-                     (Vec::from(vec![Ternary::Zero,Ternary::One,Ternary::Two]),Vec::from(vec![Ternary::Two,Ternary::Zero,Ternary::Zero])),
-                     (Vec::from(vec![Ternary::Two,Ternary::Zero,Ternary::One]),Vec::from(vec![Ternary::Zero,Ternary::Two,Ternary::Zero])),
-                     (Vec::from(vec![Ternary::One,Ternary::Zero,Ternary::Two]),Vec::from(vec![Ternary::Zero,Ternary::Two,Ternary::Zero])),
-        
-        ]
-    };
-    let goal_dfa = DFA::<Ternary> {
-        starting_state : 0,
-        state_transitions : vec![vec![0,2,1],vec![1,2,2],vec![2,2,2]],
-        accepting_states : HashSet::from_iter(vec![1]),
-        input_type : PhantomData
-    };
-    let mut translator = SRSTranslator {
-        rules : ruleset,
-        goal : goal_dfa,
-        board_solutions : HashMap::new()
-    };
-    let which_dfa = translator.dfa_with_sig_set(&SRSTranslator::<Ternary>::build_sig_k(5));
-    which_dfa.save("threerulesolver");
-*/
-    /* 
-    let board_to_solve = vec![Ternary::Zero,Ternary::One,Ternary::One,Ternary::One,Ternary::One,Ternary::One,Ternary::One,Ternary::One,Ternary::One,Ternary::Zero,Ternary::One,Ternary::Zero];
-
-    if possible_dfa.contains(&board_to_solve) {
-        for idx in 0..board_to_solve.len() {
-            if board_to_solve[idx] == Ternary::Zero {
-                continue
-            }
-            let mut solve_dupe = board_to_solve.clone();
-            solve_dupe[idx] = Ternary::Two;
-            if which_dfa.contains(&solve_dupe) {
-                println!("{}",symbols_to_string(&solve_dupe));
-                //Finding a path
-                while !translator.goal.contains(&solve_dupe) {
-                    for new_option in translator.rules.single_rule(&solve_dupe) {
-                        if which_dfa.contains(&new_option) {
-                            solve_dupe = new_option;
-                            println!("{}",symbols_to_string(&solve_dupe));
-                            break;
-                        }
-                    }
-                }
-                break;
-            }
-        }
-
-    } else {
-        println!("not solvable!");
-    }
-    
-*/
-    //let final_dfa = translator.dfa_with_sig_set(&SRSTranslator::<Binary>::build_sig_k(5));
-    //translator.verify_to_len(final_dfa,25);
-    //final_dfa.save("1dpeg");
-    //let groups = exhaustive_group_builder();
-    //prefix_test(&groups);
-
-    
-    //println!("done");
-    //signature_element_groups(&groups);
-
-    
-
-    //println!("{:?}",*SIGNATURE_ELEMENTS);
-    //println!("{}",group_to_string(&which_prefixes_solvable(&vec![false,false,false,true,true])))
-    //bfs_solver(&vec![true,true,true,false,true,true,true,true]);
-    //let groups = fast_group_builder(); 
-    //let groups = exhaustive_group_builder();
-    //identical_signature_elements(&groups);
-    //signature_element_groups(&groups);//29 meta-groups for 1dpeg threerule
-    //prefix_test(&groups);
-    //let dfa = dfa_builder();
-    //dfa.save("threerule1dpeg");
-    //println!("{} states",dfa.state_transitions.len());
-    
-    /*let mut test_board = Vec::<bool>::new();
-    let str = "01111011110110110".to_owned();
-    for i in str.chars() {
-        if i == '1' {
-            test_board.push(true);
-        } else {
-            test_board.push(false);
-        }
-    }
-    println!("ravi board: {}", dfa.contains(&test_board));*/
-    //dfa.verify_all_to_len(16); 
-    //group_solvability(&groups);
-    //let groups = fast_group_builder(); 
-    //let graph = prefix_graph(&groups);
-    
-    /*let p2n = Ruleset::<(Need,EF),Need> {
-        name : "Puzzle To Needs".to_owned(),
-        rules : Vec::new()
-    };
-    for group in EF::iter() {
-
-    }
-    println!("{}",p2n);*/
-} */
