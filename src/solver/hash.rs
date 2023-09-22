@@ -1,8 +1,8 @@
-use std::{collections::{HashSet, HashMap}, time::Instant};
+use std::collections::{HashSet, HashMap};
 
 use crate::{util::{Ruleset, DFA, SymbolIdx}, solver::{DFAStructure, SSStructure}};
 
-use super::{Solver, SizedSolver};
+use super::{Solver, SizedSolver, Instant};
 
 use bitvec::prelude::*;
 
@@ -36,7 +36,7 @@ impl Solver for HashSolver {
     fn run_internal(mut self,
                         sig_k : usize, 
                         is_debug : bool,
-                        dfa_events : std::sync::mpsc::Sender<(super::DFAStructure,super::SSStructure)>, 
+                        dfa_events : std::sync::mpsc::Sender<(DFAStructure,SSStructure)>, 
                         phase_events : std::sync::mpsc::Sender<std::time::Duration>) -> DFA {
         let sig_set = self.rules.symbol_set.build_sig_k(sig_k);
         

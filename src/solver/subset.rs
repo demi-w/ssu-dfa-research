@@ -1,11 +1,13 @@
-use std::{collections::{HashSet, HashMap}, time::Instant};
+use std::collections::{HashSet, HashMap};
 
 use bitvec::prelude::*;
 use petgraph::{prelude::DiGraph, graph::NodeIndex, Direction, algo::toposort};
 
 use crate::{util::{DFA, Ruleset, SymbolIdx}, solver::{DFAStructure, SSStructure}};
 
-use super::{Solver, SizedSolver};
+use super::{Solver, SizedSolver, Instant};
+
+
 
 #[derive(Clone)]
 pub struct SubsetSolver {
@@ -40,7 +42,7 @@ impl Solver for SubsetSolver {
     fn run_internal(mut self,
         sig_k : usize, 
         is_debug : bool,
-        dfa_events : std::sync::mpsc::Sender<(super::DFAStructure,super::SSStructure)>, 
+        dfa_events : std::sync::mpsc::Sender<(DFAStructure,SSStructure)>, 
         phase_events : std::sync::mpsc::Sender<std::time::Duration>) -> DFA {
 
         

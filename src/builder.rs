@@ -74,7 +74,7 @@ pub fn build_2xnswap<S>() -> S where S: Solver {
         symbol_set.clone()
     );
 
-    let old_dfa = DFA::load("dfaresults/default1dpeg").unwrap();
+    let old_dfa = DFA::load(&mut std::fs::File::open("dfaresults/default1dpeg").unwrap()).unwrap();
     let mut new_transitions = vec![];
 
     let error_state = 10;
@@ -339,7 +339,7 @@ pub fn build_default2dpegx3<S>() -> S where S: Solver {
     
     let ruleset = Ruleset::from_vec(new_rules,by_k_symbol_set.clone());
     
-    let root_dfa = DFA::load("default1dpeg").unwrap();
+    let root_dfa = DFA::load(&mut std::fs::File::open("default1dpeg").unwrap()).unwrap();
 
     let mut trans_table = vec![vec![1,2,2+16,2+16*2,2+16*2, 10,2,10],vec![1,3,3+16,3+16*2,3+16*2, 10,3,10]];
     for point in 0..=2 {
@@ -370,7 +370,6 @@ pub fn build_default2dpegx3<S>() -> S where S: Solver {
         accepting_states : new_accepting,
         symbol_set : by_k_symbol_set.clone()
     };
-    goal_dfa.jflap_save("experimental3xk");
     
     
     S::new(ruleset,goal_dfa)

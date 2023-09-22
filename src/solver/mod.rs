@@ -1,5 +1,7 @@
 
-use std::{sync::mpsc::{Sender, Receiver, channel}, collections::HashMap, thread, io::{self, Write}};
+use std::{sync::mpsc::{Sender, Receiver, channel}, collections::HashMap, io::{self, Write}};
+
+use std::thread;
 
 use crate::util::{Ruleset, DFA, SymbolIdx};
 
@@ -18,14 +20,37 @@ pub use self::subset::SubsetSolver;
 mod minkid;
 pub use self::minkid::MinkidSolver;
 
+#[cfg(target_arch = "wasm32")]
+pub use web_time::{Instant};
+
+
+#[cfg(not(target_arch = "wasm32"))]
+pub use std::time::{Instant};
+
 pub trait Solver where Self : Sized + Clone  + Send + 'static {
     fn get_phases() -> Vec<String>;
+
+    #[cfg(not(target_arch = "wasm32"))]
     fn run_debug(&self,
         sig_k : usize) -> (Receiver<(DFAStructure,SSStructure)>, Receiver<std::time::Duration>, thread::JoinHandle<DFA>) {
             let self_clone = self.clone();
             let (dfa_tx, dfa_rx) = channel();
             let (phase_tx, phase_rx) = channel();
             (dfa_rx, phase_rx, thread::spawn(move || {self_clone.run_internal(sig_k, true, dfa_tx, phase_tx)}))
+            
+        }
+    
+    //Changing the function signature based on the architecture is disgusting!
+    //But ya know what -- so is the state of Rust WASM, so i'm making do.
+    #[cfg(target_arch = "wasm32")]
+    fn run_debug(&self,
+        sig_k : usize) -> (Receiver<(DFAStructure,SSStructure)>, Receiver<std::time::Duration>) {
+            let self_clone = self.clone();
+            let (dfa_tx, dfa_rx) = channel();
+            let (phase_tx, phase_rx) = channel();
+            wasm_bindgen_futures::spawn_local(async move {self_clone.run_internal(sig_k, true, dfa_tx, phase_tx);});
+            (dfa_rx, phase_rx)
+            
         }
     fn run_internal(self,
                     sig_k : usize, 
@@ -38,6 +63,7 @@ pub trait Solver where Self : Sized + Clone  + Send + 'static {
         self.clone().run_internal(sig_k, false, dfa_tx,phase_tx)
     }
 
+    #[cfg(not(target_arch = "wasm32"))]
     fn run_with_print(&self, sig_k : usize) -> DFA {
         let (dfa_rx, phase_rx, run_handle) = self.run_debug(sig_k);
         let mut phase_idx;

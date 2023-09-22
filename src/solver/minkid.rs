@@ -1,11 +1,11 @@
-use std::{collections::HashSet, time::Instant};
+use std::collections::HashSet;
 
 use bitvec::prelude::*;
 use petgraph::{graph::{DiGraph,NodeIndex}, algo::{condensation, toposort}, Graph, visit::{Dfs, EdgeRef}, Direction::{Outgoing, Incoming}};
 
 use crate::util::{Ruleset, DFA, SymbolIdx};
 
-use super::{Solver, SizedSolver, DFAStructure, SSStructure};
+use super::{Solver, SizedSolver, DFAStructure, SSStructure, Instant};
 
 #[derive(Debug,Clone, Default)]
 struct SignatureSetElement {
@@ -67,7 +67,7 @@ impl Solver for MinkidSolver {
     fn run_internal(mut self,
                         sig_k : usize, 
                         is_debug : bool,
-                        dfa_events : std::sync::mpsc::Sender<(super::DFAStructure,super::SSStructure)>, 
+                        dfa_events : std::sync::mpsc::Sender<(DFAStructure,SSStructure)>, 
                         phase_events : std::sync::mpsc::Sender<std::time::Duration>) -> DFA {
         
         

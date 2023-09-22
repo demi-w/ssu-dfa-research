@@ -1,7 +1,7 @@
 use std::collections::{HashMap, HashSet};
 use std::sync::{mpsc::Sender, Arc};
 use std::thread;
-use std::time::{Duration, Instant};
+use std::time::Duration;
 
 use async_trait::async_trait;
 use crossbeam::queue::SegQueue;
@@ -9,7 +9,7 @@ use crossbeam::queue::SegQueue;
 use crate::util::{Ruleset, DFA, SymbolIdx};
 use crate::solver::Solver;
 
-use super::{DFAStructure, SSStructure, SizedSolver};
+use super::{DFAStructure, SSStructure, SizedSolver, Instant};
 
 use bitvec::prelude::*;
 
@@ -50,7 +50,7 @@ impl Solver for BFSSolver {
         sig_k : usize, 
         is_debug : bool,
         dfa_events : Sender<(DFAStructure,SSStructure)>, 
-        phase_events : Sender<std::time::Duration>) -> DFA 
+        phase_events : Sender<Duration>) -> DFA 
     {
         let sig_set = self.rules.symbol_set.build_sig_k(sig_k);
         let mut trans_table : Vec<Vec<usize>> = Vec::new(); //omg it's me !!!

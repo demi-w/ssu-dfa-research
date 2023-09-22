@@ -13,4 +13,30 @@ xml-rs = "0.8.4"
 serde_json = "1.0"
 serde = { version = "1.0.160", features = ["derive"] }
 async-trait = "0.1.73"
+egui = "0.22.0"
+eframe = { version = "0.22.0", default-features = false, features = [
+    "default_fonts", # Embed the default egui fonts.
+    "glow",          # Use the glow rendering backend. Alternative: "wgpu".
+    "persistence",   # Enable restoring app state when restarting the app.
+] }
+
+rfd = "0.12.0"
+
+
+[profile.release]
+opt-level = 2 # fast and small wasm
+
+# Optimize all dependencies even in debug builds:
+[profile.dev.package."*"]
+opt-level = 2
+
+[target.'cfg(not(target_arch = "wasm32"))'.dependencies]
+futures = "0.3.28"
+
+[target.'cfg(target_arch = "wasm32")'.dependencies]
+wasm-bindgen-futures = "0.4"
+web-time = "0.2.0"
+
+
+
 

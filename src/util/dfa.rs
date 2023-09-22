@@ -1,7 +1,7 @@
 use crate::{SymbolSet, SymbolIdx};
 use serde::{Deserialize, Serialize};
-use std::collections::{HashSet, HashMap};
-use xml::writer::{EmitterConfig, XmlEvent};
+use std::{collections::{HashSet, HashMap}, io::Read};
+use xml::{writer::{EmitterConfig, XmlEvent},reader::EventReader};
 use std::fs;
 use serde_json::Result;
 use bitvec::prelude::*;
@@ -15,6 +15,12 @@ pub struct DFA {
     pub symbol_set : SymbolSet
 }
 
+enum JFLAPTrans {
+    From,
+    To,
+    Read,
+    Unknown
+}
 
 impl DFA {
 
@@ -161,7 +167,69 @@ impl DFA {
         path
     }
 
-    fn save_jflap_to_file(&self,file : &mut fs::File) {
+
+    pub fn load_jflap_from_string(input_xml : &str) -> Self {
+        let mut trans_table = vec![];
+        let mut accepting_states = HashSet::new();
+        let mut num_states = 0;
+        let mut starting_state = 0;
+        let mut e_reader = EventReader::from_str(input_xml);
+        let mut cur_state = 0;
+        let mut trans_vec = vec![];
+        let mut unique_reps = HashSet::new();
+        let mut jflap_trans = JFLAPTrans::Unknown;
+        while let Ok(cur_event) = e_reader.next() {
+            match cur_event {
+                xml::reader::XmlEvent::EndDocument => {break},
+                xml::reader::XmlEvent::Whitespace(_) => {},
+                xml::reader::XmlEvent::StartDocument { version, encoding, standalone } => {},
+                xml::reader::XmlEvent::Comment(_) => {},
+                xml::reader::XmlEvent::StartElement { name, attributes, namespace } => {
+                    match &name.local_name[..] { 
+                        "state" => {cur_state = attributes.iter().find(|&x| x.name.local_name == "id").unwrap().value.parse().unwrap(); num_states += 1;},
+                        "initial" => {starting_state = cur_state},
+                        "final" => {accepting_states.insert(cur_state);},
+                        "transition" => {trans_vec.push((0,0,"".to_owned()))},
+                        "from" => {jflap_trans = JFLAPTrans::From},
+                        "to" => {jflap_trans = JFLAPTrans::To},
+                        "read" => {jflap_trans = JFLAPTrans::Read}
+                        _ => {},
+                    }
+                }
+                xml::reader::XmlEvent::EndElement { name } => {
+                    match &name.local_name[..] { 
+                        "from" | "to" | "read" => {jflap_trans = JFLAPTrans::Unknown},
+                        _ => {},
+                    }
+                },
+                xml::reader::XmlEvent::Characters (chars) => {
+                    match jflap_trans { 
+                        JFLAPTrans::From => {trans_vec.last_mut().unwrap().0 = chars.parse().unwrap()},
+                        JFLAPTrans::To => {trans_vec.last_mut().unwrap().1 = chars.parse().unwrap()},
+                        JFLAPTrans::Read => {trans_vec.last_mut().unwrap().2 = chars.clone(); unique_reps.insert(chars);},
+                        JFLAPTrans::Unknown => {}
+                    }
+                }
+                _ => {}
+            }
+        }
+        let mut reps_vec : Vec<String> = unique_reps.into_iter().collect();
+        reps_vec.sort();
+
+        trans_table = vec![vec![0;reps_vec.len()];num_states];
+
+        for transition in trans_vec {
+            trans_table[transition.0][reps_vec.iter().position(|x| x == &transition.2).unwrap()] = transition.1;
+        }
+
+        let temp = SymbolSet {
+            length : reps_vec.len(),
+            representations : reps_vec
+        };
+        DFA { starting_state: starting_state, state_transitions: trans_table, accepting_states: accepting_states, symbol_set: temp }
+    }
+
+    pub fn save_jflap_to_file(&self,file : &mut fs::File) {
         let mut w = EmitterConfig::new().perform_indent(true).create_writer(file);
         w.write(XmlEvent::start_element("structure")).unwrap();
         w.write(XmlEvent::start_element("type")).unwrap();
@@ -205,18 +273,27 @@ impl DFA {
         w.write(XmlEvent::end_element()).unwrap();
     }
 
-    pub fn jflap_save(&self, filename : &str) {
-        let mut file = fs::File::create(filename.clone().to_owned() + ".jff").unwrap();
-        self.save_jflap_to_file(&mut file);
+    pub fn jflap_save(&self, file : &mut fs::File) {
+        //let mut file = fs::File::create(filename.clone().to_owned() + ".jff").unwrap();
+        self.save_jflap_to_file(file);
     }
-    pub fn save(&self, filename : &str) {
-        let mut file = fs::File::create(filename.clone().to_owned() + ".dfa").unwrap();
+
+    pub fn jflap_load(file : &mut fs::File) -> Self {
+        let mut contents = "".to_owned();
+        file.read_to_string(&mut contents).unwrap();
+        Self::load_jflap_from_string(&contents)
+    }
+    pub fn save(&self, file : &mut fs::File) {
+        //let mut file = fs::File::create(filename.clone().to_owned() + ".dfa").unwrap();
         file.write(serde_json::to_string(self).unwrap().as_bytes()).unwrap();
     }
-    pub fn load(filename : &str) -> Result::<Self> {
-        let contents = fs::read_to_string(filename.clone().to_owned() + ".dfa").unwrap();
+    pub fn load(file : &mut fs::File) -> Result::<Self> {
+        let mut contents = "".to_owned();
+        file.read_to_string(&mut contents).unwrap();
+        
         serde_json::from_str(&contents)
     }
+
 }
 
 impl PartialEq for DFA {
