@@ -2,7 +2,7 @@ use crate::{SymbolSet, SymbolIdx};
 use serde::{Deserialize, Serialize};
 use std::{collections::{HashSet, HashMap}, io::Read};
 use xml::{writer::{EmitterConfig, XmlEvent},reader::EventReader};
-use std::fs;
+
 use serde_json::Result;
 use bitvec::prelude::*;
 use std::io::Write;
@@ -21,6 +21,14 @@ enum JFLAPTrans {
     Read,
     Unknown
 }
+
+#[cfg(not(target_arch = "wasm32"))]
+use std::fs::File;
+
+#[cfg(target_arch = "wasm32")]
+use rfd::FileHandle;
+#[cfg(target_arch = "wasm32")]
+type File = FileHandle;
 
 impl DFA {
 
@@ -229,8 +237,9 @@ impl DFA {
         DFA { starting_state: starting_state, state_transitions: trans_table, accepting_states: accepting_states, symbol_set: temp }
     }
 
-    pub fn save_jflap_to_file(&self,file : &mut fs::File) {
-        let mut w = EmitterConfig::new().perform_indent(true).create_writer(file);
+    pub fn save_jflap_to_bytes(&self) -> Vec<u8> {
+        let mut output_str = vec![];
+        let mut w = EmitterConfig::new().perform_indent(true).create_writer(&mut output_str);
         w.write(XmlEvent::start_element("structure")).unwrap();
         w.write(XmlEvent::start_element("type")).unwrap();
         w.write(XmlEvent::characters("fa")).unwrap();
@@ -271,25 +280,35 @@ impl DFA {
         }
         w.write(XmlEvent::end_element()).unwrap();
         w.write(XmlEvent::end_element()).unwrap();
+        output_str
     }
 
-    pub fn jflap_save(&self, file : &mut fs::File) {
+    pub fn jflap_save(&self, file : &mut File) {
         //let mut file = fs::File::create(filename.clone().to_owned() + ".jff").unwrap();
-        self.save_jflap_to_file(file);
+        file.write(&self.save_jflap_to_bytes()).unwrap();
     }
-
-    pub fn jflap_load(file : &mut fs::File) -> Self {
+    #[cfg(not(target_arch = "wasm32"))]
+    pub fn jflap_load(file : &mut File) -> Self {
         let mut contents = "".to_owned();
         file.read_to_string(&mut contents).unwrap();
         Self::load_jflap_from_string(&contents)
     }
-    pub fn save(&self, file : &mut fs::File) {
+    pub fn save(&self, file : &mut File) {
         //let mut file = fs::File::create(filename.clone().to_owned() + ".dfa").unwrap();
         file.write(serde_json::to_string(self).unwrap().as_bytes()).unwrap();
     }
-    pub fn load(file : &mut fs::File) -> Result::<Self> {
+    #[cfg(not(target_arch = "wasm32"))]
+    pub fn load(file : &mut File) -> Result::<Self> {
         let mut contents = "".to_owned();
         file.read_to_string(&mut contents).unwrap();
+        
+        serde_json::from_str(&contents)
+    }
+
+    #[cfg(target_arch = "wasm32")]
+    pub fn load(file : &mut File) -> Result::<Self> {
+        let mut contents = "".to_owned();
+        wasm_bindgen_futures::executor::block_on(file.read(&mut contents).unwrap()).join();
         
         serde_json::from_str(&contents)
     }
