@@ -1,0 +1,52 @@
+# Getting rid of a zero if even
+1|0 end - 1|V end
+0|0 end - 0|V end
+
+#moving the math side's bits down one while keeping the master bits the same
+0|0 0|V - 0|V 0|0
+0|1 0|V - 0|V 0|1
+0|0 1|V - 0|V 1|0
+0|1 1|V - 0|V 1|1
+
+1|0 0|V - 1|V 0|0
+1|1 0|V - 1|V 0|1
+1|0 1|V - 1|V 1|0
+1|1 1|V - 1|V 1|1
+
+#just get rid of tailing 0|0 bc why not
+start 0|V - start
+start 1|V - start 1|0
+
+# Starting the process of multiplying if odd
+0|1 end - carry2 0|V end
+1|1 end - carry2 1|V end
+#summarized version of X|1 end - X|1 carry1 end - carry2 X|0 end - carry2 X|V end
+
+#multiplying middle of number
+0|0 carry0 - carry0 0|0
+0|1 carry0 - carry1 0|1
+0|0 carry1 - carry0 0|1
+0|1 carry1 - carry2 0|0
+0|0 carry2 - carry1 0|0
+0|1 carry2 - carry2 0|1
+
+1|0 carry0 - carry0 1|0
+1|1 carry0 - carry1 1|1
+1|0 carry1 - carry0 1|1
+1|1 carry1 - carry2 1|0
+1|0 carry2 - carry1 1|0
+1|1 carry2 - carry2 1|1
+
+#what to do at the end
+start carry2 - start 0|1 0|0
+start carry1 - start 0|1
+start carry0 - start
+
+#equality flag
+#shifts up only if elements are equal
+#prevents any other arthimetic on unqueried bits from being performed,
+#so in order to get to the start all bits must be equal 
+end - flag end
+1|1 flag - flag 1|1
+0|0 flag - flag 0|0
+start flag - flag start
