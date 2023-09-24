@@ -9,7 +9,7 @@ use crossbeam::queue::SegQueue;
 use crate::util::{Ruleset, DFA, SymbolIdx};
 use crate::solver::Solver;
 
-use super::{DFAStructure, SSStructure, SizedSolver, Instant};
+use super::{DFAStructure, SSStructure, Instant};
 
 use bitvec::prelude::*;
 
@@ -22,21 +22,30 @@ pub struct BFSSolver {
     worker_threads : usize
 }
 
-impl SizedSolver for BFSSolver {
+#[async_trait]
+impl Solver for BFSSolver {
+
     fn get_max_input(&self) -> usize {
         self.max_input
     }
     fn get_min_input(&self) -> usize {
         self.min_input
     }
-}
 
-#[async_trait]
-impl Solver for BFSSolver {
+    fn get_goal(&self) -> &DFA {
+        &self.goal
+    }
+
     fn get_phases() -> Vec<String> {
         vec!["Entire Iteration".to_owned()]
     }
+
+    fn get_ruleset(&self) -> &Ruleset{
+        &self.rules
+    }
+
     fn new(ruleset:Ruleset, goal :DFA) -> Self {
+        assert_eq!(ruleset.symbol_set,goal.symbol_set);
         let (min_input, max_input) = BFSSolver::sized_init(&ruleset);
         BFSSolver { 
             rules: ruleset,
@@ -206,7 +215,7 @@ impl BFSSolver {
                 if self.goal.contains(board) {
                     return true;
                 }
-                for new_board in self.single_rule_hash(&self.rules.rules, board) {
+                for new_board in self.single_rule_hash(board) {
                     if !known_states.contains(&new_board) {
                         known_states.insert(new_board.clone());
                         new_boards.push(new_board);

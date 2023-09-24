@@ -5,7 +5,7 @@ use petgraph::{prelude::DiGraph, graph::NodeIndex, Direction, algo::toposort};
 
 use crate::{util::{DFA, Ruleset, SymbolIdx}, solver::{DFAStructure, SSStructure}};
 
-use super::{Solver, SizedSolver, Instant};
+use super::{Solver, Instant};
 
 
 
@@ -21,22 +21,30 @@ pub struct SubsetSolver {
     unique_sigs : HashMap<BitVec,usize>
 }
 
-impl SizedSolver for SubsetSolver {
+impl Solver for SubsetSolver {
+
     fn get_max_input(&self) -> usize {
         self.max_input
     }
     fn get_min_input(&self) -> usize {
         self.min_input
     }
-}
 
-impl Solver for SubsetSolver {
+    fn get_goal(&self) -> &DFA {
+        &self.goal
+    }
+
     fn new(ruleset : Ruleset, goal : DFA) -> Self {
+        assert_eq!(ruleset.symbol_set,goal.symbol_set);
         let (min_input, max_input) = SubsetSolver::sized_init(&ruleset);
         SubsetSolver { goal: goal, rules: ruleset, sig_sets : vec![], solved_yet : vec![] , trans_table : vec![], min_input : min_input, max_input : max_input, unique_sigs : HashMap::new() }
     }
     fn get_phases() -> Vec<String> {
         vec!["Rule graph generation".to_owned(), "Sig set generation".to_owned(),"Uniqueness checks".to_owned(), "Clean up".to_owned()]
+    }
+
+    fn get_ruleset(&self) -> &Ruleset{
+        &self.rules
     }
 
     fn run_internal(mut self,
@@ -347,7 +355,7 @@ impl SubsetSolver {
             return true;
         }
         //Do not need to update this node if true because recursive thing above should cover it.
-        for new_board in self.single_rule_hash(&self.rules.rules, &start_board) {
+        for new_board in self.single_rule_hash(&start_board) {
             let mut dfa_idx = 0;
             let mut board_idx = 0;
             //Find the location of the changed board in the DFA

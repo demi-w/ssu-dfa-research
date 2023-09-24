@@ -1,11 +1,11 @@
-use std::collections::HashSet;
+use std::{collections::HashSet, io::Write};
 
 use bitvec::prelude::*;
 use petgraph::{graph::{DiGraph,NodeIndex}, algo::{condensation, toposort}, Graph, visit::{Dfs, EdgeRef}, Direction::{Outgoing, Incoming}};
 
 use crate::util::{Ruleset, DFA, SymbolIdx};
 
-use super::{Solver, SizedSolver, DFAStructure, SSStructure, Instant};
+use super::{Solver, DFAStructure, SSStructure, Instant};
 
 #[derive(Debug,Clone, Default)]
 struct SignatureSetElement {
@@ -37,15 +37,6 @@ pub struct MinkidSolver {
     ss_idx_to_link : Vec<NodeIndex>,
 }
 
-impl SizedSolver for MinkidSolver {
-    fn get_max_input(&self) -> usize {
-        self.max_input
-    }
-    fn get_min_input(&self) -> usize {
-        self.min_input
-    }
-}
-
 struct MKDFAState {
     minkids : HashSet<NodeIndex>,
     goal_states : Vec<usize>
@@ -55,13 +46,29 @@ struct MKDFAState {
 
 impl Solver for MinkidSolver {
 
+    fn get_max_input(&self) -> usize {
+        self.max_input
+    }
+    fn get_min_input(&self) -> usize {
+        self.min_input
+    }
+
+    fn get_goal(&self) -> &DFA {
+        &self.goal
+    }
+
     fn get_phases() -> Vec<String> {
         vec!["Build rule graph".to_owned(),"Propagate pure links".to_owned(), "Propagate minkids".to_owned(), "Remove duplicates".to_owned()]
     }
 
     fn new(ruleset : Ruleset, goal : DFA) -> Self {
+        assert_eq!(ruleset.symbol_set,goal.symbol_set);
         let (min_input, max_input) = MinkidSolver::sized_init(&ruleset);
         MinkidSolver { goal: goal, rules: ruleset, max_input: max_input, min_input: min_input, goal_minkids: vec![], ss_link_graph: Graph::new(), ss_idx_to_link: vec![] }
+    }
+
+    fn get_ruleset(&self) -> &Ruleset{
+        &self.rules
     }
 
     fn run_internal(mut self,
@@ -70,7 +77,7 @@ impl Solver for MinkidSolver {
                         dfa_events : std::sync::mpsc::Sender<(DFAStructure,SSStructure)>, 
                         phase_events : std::sync::mpsc::Sender<std::time::Duration>) -> DFA {
         
-        
+
     //graph of connections based on LHS->RHS links for all states
     //Usize is index in trans_table
 
@@ -146,25 +153,53 @@ impl Solver for MinkidSolver {
             for rule_list in &self.rules.rules {
                 let lhs_str = rule_list.0;
                 for rhs_str in rule_list.1 {
-                    let mut lhs = start_node;
-                    let mut rhs = start_node;
-                    let mut p_rule_len = 0;
-                    while p_rule_len < lhs_str.len() {
-                        p_rule_len += 1;
-                        //If both the rhs and the lhs can actually go further in the DFA
-                        if let Some(new_lhs_edge) = dfa_graph.edges_directed(lhs,Outgoing).find(|x| *x.weight() == lhs_str[p_rule_len-1]) {
-                            if let Some(new_rhs_edge) = dfa_graph.edges_directed(rhs,Outgoing).find(|x| *x.weight() == rhs_str[p_rule_len-1]) {
-                                lhs = new_lhs_edge.target();
-                                rhs = new_rhs_edge.target();
-                                self.add_link(&mut link_graph, lhs, rhs, &lhs_str[p_rule_len..], &rhs_str[p_rule_len..]);
-                            }else {
-                                break
-                            }
+                    let mut lhs = vec![start_node];
+                    let mut rhs = vec![start_node];
+                    let mut p_rule_len = 1;
+                    while p_rule_len < lhs_str.len() && p_rule_len < rhs_str.len() {
+
+                        let mut potential_lhs_e = vec![];
+
+                        for lhs_e in &lhs {
+                            if p_rule_len < lhs_str.len() {
+                                if let Some(e) = dfa_graph.edges_directed(*lhs_e,Outgoing).find(|x| *x.weight() == lhs_str[p_rule_len-1]) {
+                                    potential_lhs_e.push(e)
+                                }
+                            } else{
+                                potential_lhs_e.append(&mut dfa_graph.edges_directed(*lhs_e,Outgoing).collect());
+                            };
                         }
-                        else {
+
+                        let mut potential_rhs_e = vec![];
+
+                        for rhs_e in &rhs {
+                            if p_rule_len < rhs_str.len() {
+                                if let Some(e) = dfa_graph.edges_directed(*rhs_e,Outgoing).find(|x| *x.weight() == rhs_str[p_rule_len-1]) {
+                                    potential_rhs_e.push(e)
+                                }
+                            } else{
+                                potential_rhs_e.append(&mut dfa_graph.edges_directed(*rhs_e,Outgoing).collect());
+                            };
+                        }
+                        if potential_lhs_e.is_empty() || potential_rhs_e.is_empty() {
                             break
                         }
-                        
+                        lhs.clear();
+                        rhs.clear();
+                        for potential_lhs_edge in &potential_lhs_e {
+                            for potential_rhs_edge in &potential_rhs_e {
+                                let lhs_strip = if p_rule_len < lhs_str.len() {&lhs_str[p_rule_len..]} else {&lhs_str[..0]};
+                                let rhs_strip = if p_rule_len < rhs_str.len() {&rhs_str[p_rule_len..]} else {&rhs_str[..0]};
+                                self.add_link(&mut link_graph, potential_lhs_edge.target(), potential_rhs_edge.target(), lhs_strip, rhs_strip);
+                            }
+                        }
+                        for potential_lhs_edge in potential_lhs_e {
+                            lhs.push(potential_lhs_edge.target());
+                        }
+                        for potential_rhs_edge in potential_rhs_e {
+                            rhs.push(potential_rhs_edge.target());
+                        }
+                        p_rule_len += 1;
                     } 
                 }
             }
@@ -220,7 +255,7 @@ impl Solver for MinkidSolver {
             phase_events.send(dur).unwrap();
             last_time = Instant::now();
         }
-        /* 
+        
         let mut debug_link_graph : DiGraph<String,(Vec<SymbolIdx>,Vec<SymbolIdx>)> = Graph::new();
         for i in 0..link_graph.node_count() {
             if i < *iteration_lens.last().unwrap() {
@@ -235,9 +270,9 @@ impl Solver for MinkidSolver {
             debug_link_graph.add_edge(edge.source(), edge.target(), edge.weight.clone());
         }
 
-        let mut file = File::create(format!("link_graph_debug/{}.dot",iteration_lens.len()-2)).unwrap();
-        file.write_fmt(format_args!("{:?}",Dot::new(&debug_link_graph)));
-        */
+        let mut file = std::fs::File::create(format!("link_graph_debug/{}.dot",iteration_lens.len()-2)).unwrap();
+        file.write_fmt(format_args!("{:?}",petgraph::dot::Dot::new(&debug_link_graph)));
+        
         //Alright, pretending/assuming that we've written that correctly, we move on to actually propagating ancestors!
         //this also sucks :(
         //Just to get the ball rolling, we run through everything new once
@@ -372,8 +407,12 @@ impl MinkidSolver {
             ss_link_graph.add_node(i);
         }
         for i in 0..sig_set.len() {
-            for result in self.single_rule_hash(&self.rules.rules,&sig_set[i]) {
-                ss_link_graph.add_edge(NodeIndex::new(i), NodeIndex::new(self.rules.symbol_set.find_in_sig_set(result.iter())), ());
+            for result in self.single_rule_hash(&sig_set[i]) {
+                let target_idx = self.rules.symbol_set.find_in_sig_set(result.iter());
+                if target_idx < sig_set.len() {
+                    ss_link_graph.add_edge(NodeIndex::new(i), NodeIndex::new(target_idx), ());
+                }
+                
             }
         }
         //Get rid of strongly-connected components
@@ -566,14 +605,13 @@ impl MinkidSolver {
         //2. any of them make our potential link redundant by already being more flexible
         for edge in link_graph.edges_connecting(lhs, rhs) {
             //redundancy check!
-            //This currently isn't ~designed~ around anything other than length-preserving strings, bc they stilll confuse me
 
             let lhs_min = std::cmp::min(lhs_obligation.len(), edge.weight().0.len());
             let rhs_min = std::cmp::min(rhs_obligation.len(), edge.weight().1.len());
             //Check our proposed obligation against the current one. If ours is shorter, compare the prefixes of both such that they maintain equal length
             if &edge.weight().0[..lhs_min] == lhs_obligation && &edge.weight().1[..rhs_min] == rhs_obligation {
                 //and the current edge has a greater obligation
-                if edge.weight().0.len() > lhs_obligation.len() {
+                if (lhs_obligation.len() == lhs_min && rhs_obligation.len() == rhs_min) && (edge.weight().0.len() > lhs_min || edge.weight().1.len() > rhs_min) {
                     death_row.push(edge.id());
                 //otherwise, there's no benefit to adding this edge!
                 }else {

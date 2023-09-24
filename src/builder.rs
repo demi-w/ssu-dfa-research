@@ -2,7 +2,14 @@ use std::collections::HashSet;
 
 use crate::{util::{DFA, SymbolSet, Ruleset, SymbolIdx}, solver::Solver};
 
-
+pub fn build_1dpeg_result() -> DFA {
+    DFA {
+        starting_state:0,
+        state_transitions:vec![vec![1,2],vec![1,3],vec![4,5],vec![4,6],vec![7,8],vec![3,9],vec![3,9],vec![7,10],vec![11,4],vec![12,13],vec![10,10],vec![10,14],vec![10,15],vec![8,16],vec![11,7],vec![10,11],vec![12,17],vec![14,16]],
+        accepting_states:HashSet::from_iter(vec![2,6,7,4,3].iter().cloned()),
+        symbol_set:SymbolSet {length:2,representations:vec!["0".to_owned(),"1".to_owned()]}
+    }
+}
 
 pub fn build_threerulesolver<S>() -> S where S: Solver {
     let b_symbol_set = SymbolSet {
@@ -74,7 +81,7 @@ pub fn build_2xnswap<S>() -> S where S: Solver {
         symbol_set.clone()
     );
 
-    let old_dfa = DFA::load(&mut std::fs::File::open("dfaresults/default1dpeg").unwrap()).unwrap();
+    let old_dfa = build_1dpeg_result();
     let mut new_transitions = vec![];
 
     let error_state = 10;
@@ -339,7 +346,7 @@ pub fn build_default2dpegx3<S>() -> S where S: Solver {
     
     let ruleset = Ruleset::from_vec(new_rules,by_k_symbol_set.clone());
     
-    let root_dfa = DFA::load(&mut std::fs::File::open("default1dpeg").unwrap()).unwrap();
+    let root_dfa = build_1dpeg_result();
 
     let mut trans_table = vec![vec![1,2,2+16,2+16*2,2+16*2, 10,2,10],vec![1,3,3+16,3+16*2,3+16*2, 10,3,10]];
     for point in 0..=2 {

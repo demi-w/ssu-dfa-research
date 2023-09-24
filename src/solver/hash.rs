@@ -2,7 +2,7 @@ use std::collections::{HashSet, HashMap};
 
 use crate::{util::{Ruleset, DFA, SymbolIdx}, solver::{DFAStructure, SSStructure}};
 
-use super::{Solver, SizedSolver, Instant};
+use super::{Solver, Instant};
 
 use bitvec::prelude::*;
 
@@ -16,23 +16,33 @@ pub struct HashSolver {
     board_solutions : HashMap<Vec<SymbolIdx>,bool>,
 }
 
-impl SizedSolver for HashSolver {
+
+impl Solver for HashSolver {
+
     fn get_max_input(&self) -> usize {
         self.max_input
     }
     fn get_min_input(&self) -> usize {
         self.min_input
     }
-}
 
-impl Solver for HashSolver {
+    fn get_goal(&self) -> &DFA {
+        &self.goal
+    }
+
     fn new(ruleset : Ruleset, goal : DFA) -> Self {
+        assert_eq!(ruleset.symbol_set,goal.symbol_set);
         let (min_input, max_input) = HashSolver::sized_init(&ruleset);
         HashSolver { min_input : min_input, max_input : max_input, goal: goal, rules: ruleset, board_solutions : HashMap::new() }
     }
     fn get_phases() -> Vec<String> {
         vec!["Entire Iteration".to_owned()]
     }
+
+    fn get_ruleset(&self) -> &Ruleset{
+        &self.rules
+    }
+
     fn run_internal(mut self,
                         sig_k : usize, 
                         is_debug : bool,
@@ -157,7 +167,7 @@ impl HashSolver {
                         break;
                     }
                 }
-                for new_board in self.single_rule_hash(&self.rules.rules,&all_boards[board_idx].1) {
+                for new_board in self.single_rule_hash(&all_boards[board_idx].1) {
                     if !known_states.contains(&new_board) {
                         known_states.insert(new_board.clone());
                         all_boards.push((board_idx,new_board));

@@ -1,9 +1,9 @@
 
-use std::{sync::mpsc::{Sender, Receiver, channel}, collections::HashMap, io::{self, Write}};
+use std::{sync::mpsc::{Sender, Receiver, channel}, collections::{HashMap, HashSet}, io::{self, Write}, fmt::Display};
 
 use std::thread;
 
-use crate::util::{Ruleset, DFA, SymbolIdx};
+use crate::util::{Ruleset, DFA, SymbolIdx, SymbolSet};
 
 pub use self::events::*;
 mod events;
@@ -20,12 +20,13 @@ pub use self::subset::SubsetSolver;
 mod minkid;
 pub use self::minkid::MinkidSolver;
 
+use petgraph::{graph::{DiGraph,NodeIndex}, visit::EdgeRef};
 #[cfg(target_arch = "wasm32")]
-pub use web_time::{Instant};
+pub use web_time::Instant;
 
 
 #[cfg(not(target_arch = "wasm32"))]
-pub use std::time::{Instant};
+pub use std::time::Instant;
 
 pub trait Solver where Self : Sized + Clone  + Send + 'static {
     fn get_phases() -> Vec<String>;
@@ -97,16 +98,18 @@ pub trait Solver where Self : Sized + Clone  + Send + 'static {
     }
 
     fn new(ruleset : Ruleset, goal : DFA) -> Self;
-}
 
-pub trait SizedSolver {
+    fn get_ruleset(&self) -> &Ruleset;
+
+    fn get_goal(&self) -> &DFA;
+
     fn get_min_input(&self) -> usize;
     fn get_max_input(&self) -> usize;
-    fn single_rule_hash(&self, map : &HashMap<Vec<SymbolIdx>,Vec<Vec<SymbolIdx>>>, start_board : &Vec<SymbolIdx>) -> Vec<Vec<SymbolIdx>> {
+    fn single_rule_hash(&self, start_board : &Vec<SymbolIdx>) -> Vec<Vec<SymbolIdx>> {
         let mut result = vec![];
         for lftmst_idx in 0..start_board.len() {
             for slice_length in self.get_min_input()..core::cmp::min(self.get_max_input(),start_board.len()-lftmst_idx)+1 {
-                match map.get(&start_board[lftmst_idx..(lftmst_idx+slice_length)]) {
+                match self.get_ruleset().rules.get(&start_board[lftmst_idx..(lftmst_idx+slice_length)]) {
                     Some(new_swaps) => {
                         let new_board = start_board[0..lftmst_idx].to_vec();
 
@@ -137,20 +140,13 @@ pub trait SizedSolver {
         }
         (min_input, max_input)
     }
-}
-
-
-/*
-method to solve a string
-todo: implement generically
-
     fn solve_string(&self, possible_dfa : &DFA, input_str : &Vec<SymbolIdx>) -> Vec<Vec<SymbolIdx>> {
         let mut intrepid_str = input_str.clone();
         let mut visited = HashSet::new();
         let mut result = vec![intrepid_str.clone()];
         visited.insert(intrepid_str.clone());
-        while !self.goal.contains(&intrepid_str) {
-            for option in self.rules.single_rule_hash(&intrepid_str) {
+        while !self.get_goal().contains(&intrepid_str) {
+            for option in self.single_rule_hash(&intrepid_str) {
                 if !visited.contains(&option) && possible_dfa.contains(&option) {
                     //println!("{}",symbols_to_string(&intrepid_str));
                     intrepid_str = option;
@@ -162,6 +158,99 @@ todo: implement generically
         //println!("{}",symbols_to_string(&intrepid_str));
         result
     }
+
+    fn build_rule_graph(&self, possible_dfa : &DFA) -> DiGraph::<usize,RuleGraphRoot> {
+        let mut rule_graph = DiGraph::<usize,RuleGraphRoot>::new();
+
+        for index in 0..possible_dfa.state_transitions.len() {
+            rule_graph.add_node(index);
+        }
+        for origin in 0..possible_dfa.state_transitions.len() {
+            for rule_list in &self.get_ruleset().rules {
+                if rule_list.0 == &vec![10,11] {
+                    println!("i want real watchpoints")
+                }
+                let lhs = rule_list.0;
+                let mut parent = origin;
+                for i in 0..lhs.len() {
+                    parent = possible_dfa.state_transitions[parent][lhs[i] as usize];
+                }
+                for rhs in rule_list.1 {
+                    let mut child = origin;
+
+                    for i in 0..rhs.len() {
+                        child = possible_dfa.state_transitions[child][rhs[i] as usize];
+                    }
+                    rule_graph.update_edge(NodeIndex::new(parent),NodeIndex::new(child),RuleGraphRoot::new(lhs.clone(),rhs.clone(),parent,child,origin));
+                }
+            }  
+        }
+        // After establishing the starting points of all links, extend those links outward.
+        let mut old_len = 0;
+        while old_len < rule_graph.edge_count() {
+            let new_len = rule_graph.edge_count();
+            for edge_idx in old_len..new_len {
+                let old_weight = rule_graph.raw_edges()[edge_idx].weight.clone();
+                let old_parent = rule_graph[rule_graph.raw_edges()[edge_idx].source()];
+                let old_child = rule_graph[rule_graph.raw_edges()[edge_idx].target()];
+                for sym in 0..self.get_ruleset().symbol_set.length {
+                    let new_parent = possible_dfa.state_transitions[old_parent][sym as usize];
+                    let new_child = possible_dfa.state_transitions[old_child][sym as usize];
+                    if !rule_graph.contains_edge(NodeIndex::new(new_parent), NodeIndex::new(new_child)) {
+                        rule_graph.add_edge(NodeIndex::new(new_parent),NodeIndex::new(new_child),old_weight.clone());
+                    }
+                }
+            }
+            old_len = new_len;
+        }
+        rule_graph
+    }
+    fn is_superset(&self, test_dfa : &DFA) -> Result<(),(RuleGraphRoot,usize,usize)> {
+        println!("verbal reminder that this currently assumes that test_dfa >= self.get_goal()");
+        let rule_graph = self.build_rule_graph(test_dfa);
+        for edge in rule_graph.edge_references() {
+            if !test_dfa.accepting_states.contains(&edge.source().index()) && test_dfa.accepting_states.contains(&edge.target().index()) {
+                return Err((edge.weight().clone(),edge.source().index(),edge.target().index()));
+            }
+        }
+        Ok(())
+    }
+}
+
+#[derive(Debug,Clone)]
+pub struct RuleGraphRoot {
+    lhs :Vec<SymbolIdx>,
+    rhs : Vec<SymbolIdx>,
+    init_lhs_state : usize,
+    init_rhs_state : usize,
+    origin : usize
+}
+
+impl RuleGraphRoot {
+    fn new(lhs :Vec<SymbolIdx>,rhs : Vec<SymbolIdx>,init_lhs_state : usize, init_rhs_state : usize, origin : usize) -> Self {
+        RuleGraphRoot { lhs: lhs, rhs: rhs, init_lhs_state: init_lhs_state, init_rhs_state: init_rhs_state, origin : origin }
+    }
+    pub fn to_string(&self, symset : &SymbolSet) -> String {
+        let mut result = "".to_owned();
+        result.push_str("LHS ");
+        result.push_str(&symset.symbols_to_string(&self.lhs));
+        result.push_str(" | RHS ");
+        result.push_str(&symset.symbols_to_string(&self.rhs));
+        result.push_str(" | initial LHS state ");
+        result.push_str(&self.init_lhs_state.to_string());
+        result.push_str(" | initial RHS state ");
+        result.push_str(&self.init_rhs_state.to_string());
+        result.push_str(" | origin ");
+        result.push_str(&self.origin.to_string());
+        result
+    }
+}
+
+/*
+method to solve a string
+todo: implement generically
+
+
 
 */
 

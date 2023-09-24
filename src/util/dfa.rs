@@ -1,6 +1,6 @@
-use crate::{SymbolSet, SymbolIdx};
+use crate::{SymbolSet, SymbolIdx, wbf_fix};
 use serde::{Deserialize, Serialize};
-use std::{collections::{HashSet, HashMap}, io::Read};
+use std::{collections::{HashSet, HashMap}, io::Read, hash::Hash};
 use xml::{writer::{EmitterConfig, XmlEvent},reader::EventReader};
 
 use serde_json::Result;
@@ -29,6 +29,9 @@ use std::fs::File;
 use rfd::FileHandle;
 #[cfg(target_arch = "wasm32")]
 type File = FileHandle;
+
+#[cfg(target_arch = "wasm32")]
+use wasm_bindgen_futures;
 
 impl DFA {
 
@@ -177,15 +180,18 @@ impl DFA {
 
 
     pub fn load_jflap_from_string(input_xml : &str) -> Self {
-        let mut trans_table = vec![];
+        let mut trans_table ;
         let mut accepting_states = HashSet::new();
         let mut num_states = 0;
-        let mut starting_state = 0;
+        let mut starting_state=0 ;
         let mut e_reader = EventReader::from_str(input_xml);
-        let mut cur_state = 0;
+        let mut cur_state=0;
         let mut trans_vec = vec![];
         let mut unique_reps = HashSet::new();
         let mut jflap_trans = JFLAPTrans::Unknown;
+
+        let mut state_ids : HashMap<String, usize>= HashMap::new();
+
         while let Ok(cur_event) = e_reader.next() {
             match cur_event {
                 xml::reader::XmlEvent::EndDocument => {break},
@@ -194,9 +200,14 @@ impl DFA {
                 xml::reader::XmlEvent::Comment(_) => {},
                 xml::reader::XmlEvent::StartElement { name, attributes, namespace } => {
                     match &name.local_name[..] { 
-                        "state" => {cur_state = attributes.iter().find(|&x| x.name.local_name == "id").unwrap().value.parse().unwrap(); num_states += 1;},
+                        "state" => {
+                            let cur_str = &attributes.iter().find(|&x| x.name.local_name == "id").unwrap().value;
+                            cur_state = cur_str.parse().unwrap();
+                            state_ids.insert(cur_str.clone(), num_states);
+                            num_states += 1;
+                        },
                         "initial" => {starting_state = cur_state},
-                        "final" => {accepting_states.insert(cur_state);},
+                        "final" => {accepting_states.insert(num_states-1);},
                         "transition" => {trans_vec.push((0,0,"".to_owned()))},
                         "from" => {jflap_trans = JFLAPTrans::From},
                         "to" => {jflap_trans = JFLAPTrans::To},
@@ -212,8 +223,8 @@ impl DFA {
                 },
                 xml::reader::XmlEvent::Characters (chars) => {
                     match jflap_trans { 
-                        JFLAPTrans::From => {trans_vec.last_mut().unwrap().0 = chars.parse().unwrap()},
-                        JFLAPTrans::To => {trans_vec.last_mut().unwrap().1 = chars.parse().unwrap()},
+                        JFLAPTrans::From => {trans_vec.last_mut().unwrap().0 = *state_ids.get(&chars).unwrap()},
+                        JFLAPTrans::To => {trans_vec.last_mut().unwrap().1 = *state_ids.get(&chars).unwrap()},
                         JFLAPTrans::Read => {trans_vec.last_mut().unwrap().2 = chars.clone(); unique_reps.insert(chars);},
                         JFLAPTrans::Unknown => {}
                     }
@@ -224,10 +235,26 @@ impl DFA {
         let mut reps_vec : Vec<String> = unique_reps.into_iter().collect();
         reps_vec.sort();
 
-        trans_table = vec![vec![0;reps_vec.len()];num_states];
-
-        for transition in trans_vec {
+        trans_table = vec![vec![usize::MAX;reps_vec.len()];num_states];
+        
+        for transition in &trans_vec {
             trans_table[transition.0][reps_vec.iter().position(|x| x == &transition.2).unwrap()] = transition.1;
+        }
+        //If dfa is incomplete
+        if trans_vec.len() < reps_vec.len() * trans_table.len() {
+            let mut error_state_already = None;
+            for state_idx in 0..trans_table.len() {
+                if !accepting_states.contains(&state_idx) && trans_table[state_idx].iter().all(|f| {f == &state_idx || f == &usize::MAX}){
+                    error_state_already = Some(state_idx);
+                }
+            }
+            let error_state = match error_state_already {
+                Some(e_state) => e_state,
+                None => {trans_table.push(vec![trans_table.len();reps_vec.len()]); trans_table.len() - 1}
+            };
+            for state_trans in &mut trans_table {
+                state_trans.iter_mut().for_each(|f| {if *f == usize::MAX {*f = error_state}});
+            }
         }
 
         let temp = SymbolSet {
@@ -285,7 +312,7 @@ impl DFA {
 
     pub fn jflap_save(&self, file : &mut File) {
         //let mut file = fs::File::create(filename.clone().to_owned() + ".jff").unwrap();
-        file.write(&self.save_jflap_to_bytes()).unwrap();
+        let _ = file.write(&self.save_jflap_to_bytes());
     }
     #[cfg(not(target_arch = "wasm32"))]
     pub fn jflap_load(file : &mut File) -> Self {
@@ -293,10 +320,6 @@ impl DFA {
         file.read_to_string(&mut contents).unwrap();
         Self::load_jflap_from_string(&contents)
     }
-    pub fn save(&self, file : &mut File) {
-        //let mut file = fs::File::create(filename.clone().to_owned() + ".dfa").unwrap();
-        file.write(serde_json::to_string(self).unwrap().as_bytes()).unwrap();
-    }
     #[cfg(not(target_arch = "wasm32"))]
     pub fn load(file : &mut File) -> Result::<Self> {
         let mut contents = "".to_owned();
@@ -304,14 +327,34 @@ impl DFA {
         
         serde_json::from_str(&contents)
     }
-
-    #[cfg(target_arch = "wasm32")]
-    pub fn load(file : &mut File) -> Result::<Self> {
-        let mut contents = "".to_owned();
-        wasm_bindgen_futures::executor::block_on(file.read(&mut contents).unwrap()).join();
-        
-        serde_json::from_str(&contents)
+    pub fn save(&self, file : &mut File) {
+        //let mut file = fs::File::create(filename.clone().to_owned() + ".dfa").unwrap();
+        let _ = file.write(serde_json::to_string(self).unwrap().as_bytes());
     }
+
+
+    pub fn load_handle(file : rfd::FileHandle) -> (rfd::FileHandle,Result::<Self>) {
+        let contents = wbf_fix(
+            async {
+                let c_raw = file.read().await;
+                let contents = String::from_utf8_lossy(&c_raw[..]);
+                (file, contents.into_owned())
+            }
+            );
+        (contents.0,serde_json::from_str(&contents.1))
+    }
+
+    pub fn jflap_load_handle(file : rfd::FileHandle) -> (rfd::FileHandle, Self) {
+        let contents = wbf_fix(
+            async {
+                let c_raw = file.read().await;
+                let contents = String::from_utf8_lossy(&c_raw[..]);
+                (file, contents.into_owned())
+            }
+            );
+        (contents.0, Self::load_jflap_from_string(&contents.1))
+    }
+    
 
 }
 
@@ -338,3 +381,4 @@ impl PartialEq for DFA {
         true
     }
 }
+

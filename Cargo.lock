@@ -476,25 +476,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "cs496"
-version = "0.9.0"
-dependencies = [
- "async-trait",
- "bitvec",
- "crossbeam",
- "eframe",
- "egui",
- "futures",
- "petgraph",
- "rfd",
- "serde",
- "serde_json",
- "wasm-bindgen-futures",
- "web-time",
- "xml-rs",
-]
-
-[[package]]
 name = "directories-next"
 version = "2.0.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1794,6 +1775,26 @@ checksum = "0a345c870a1fae0b1b779085e81b51e614767c239e93503588e54c5b17f4b0e8"
 dependencies = [
  "smithay-client-toolkit",
  "wayland-client",
+]
+
+[[package]]
+name = "srs_to_dfa"
+version = "0.9.0"
+dependencies = [
+ "async-trait",
+ "bitvec",
+ "crossbeam",
+ "eframe",
+ "egui",
+ "futures",
+ "petgraph",
+ "rfd",
+ "serde",
+ "serde_json",
+ "wasm-bindgen-futures",
+ "web-sys",
+ "web-time",
+ "xml-rs",
 ]
 
 [[package]]

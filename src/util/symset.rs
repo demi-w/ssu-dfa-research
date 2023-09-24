@@ -2,7 +2,7 @@ use std::collections::HashMap;
 use serde::{Serialize,Deserialize};
 pub type SymbolIdx = u8;
 
-#[derive(Debug,Clone)]
+#[derive(Debug,Clone,PartialEq,Eq)]
 pub struct Ruleset {
     pub rules : HashMap<Vec<SymbolIdx>,Vec<Vec<SymbolIdx>>>,
     pub symbol_set : SymbolSet
@@ -29,12 +29,12 @@ impl Ruleset {
     
         //Add un-indexed list of rules
         for line in input_str.split('\n') {
-    
+            let uncommented_line = line.split('#').next().unwrap();
             //If line is exclusively whitespace
-            if line.split_whitespace().collect::<Vec<_>>().is_empty() {
+            if uncommented_line.split_whitespace().collect::<Vec<_>>().is_empty() {
                 continue
             }
-            let mut split_hs = line.split("-");
+            let mut split_hs = uncommented_line.split("-");
     
             //safe unwrap as there must be at least one section in the split
             let lhs_raw = split_hs.next().unwrap();
@@ -162,8 +162,9 @@ impl SymbolSet {
     pub fn symbols_to_string(&self, symbols : &Vec<SymbolIdx>) -> String{
         let mut string = "".to_owned();
         for sym in symbols {
-            string += &format!("{}", self.representations[*sym as usize]);
+            string += &format!("{} ", self.representations[*sym as usize]);
         }
+        string.pop();
         string
     }
     pub fn string_to_symbols(&self, symbols : &Vec<&str>) -> Vec<SymbolIdx>{

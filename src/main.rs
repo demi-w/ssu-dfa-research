@@ -10,17 +10,48 @@ use std::thread::JoinHandle;
 use std::time::Duration;
 use std::path::PathBuf;
 
-pub mod util;
-pub mod solver;
-pub mod builder;
-use crate::solver::{BFSSolver, MinkidSolver, Solver, DFAStructure, SSStructure};
-use crate::util::*;
-use crate::builder::build_default1dpeg;
+
+
+
+use srs_to_dfa::solver::{BFSSolver, MinkidSolver, Solver, DFAStructure, SSStructure};
+use srs_to_dfa::util::*;
+use srs_to_dfa::builder::build_default1dpeg;
+use srs_to_dfa::{wbf_fix,execute};
 use std::sync::mpsc::{Receiver, Sender};
 use rfd::{self, FileHandle};
 
+use srs_to_dfa::test::*;
+
+
+#[cfg(target_arch = "wasm32")]
+use web_sys;
+
+
 #[cfg(not(target_arch = "wasm32"))]
 fn main() {
+
+    let oh_dear = DFA::jflap_load(&mut File::open("jffresults/collatz_attempt.jff").unwrap());
+
+    let goal = DFA::jflap_load(&mut File::open("example_goals/collatz_cycle.jff").unwrap());
+
+    let mut rule_str ="".to_owned();
+
+    File::open("srs/collatz").unwrap().read_to_string(&mut rule_str).unwrap();
+
+    let ruleset = Ruleset::from_string( &rule_str);
+
+    let solver = MinkidSolver::new(ruleset,goal);
+
+//    for str in solver.solve_string(&oh_dear, &oh_dear.symbol_set.string_to_symbols(&vec!["flag","start","0|1","1|V","end"])) {
+//        println!("{}",oh_dear.symbol_set.symbols_to_string(&str));
+//    }
+    let result_dfa = solver.run_with_print(7);
+    result_dfa.jflap_save(&mut File::create("jffresults/collatz_attempt.jff").unwrap());
+
+    match solver.is_superset(&oh_dear) {
+        Ok(_) => println!("yippiee"),
+        Err((rgr,start,end)) => println!("{} | {} | {}",rgr.to_string(&solver.get_ruleset().symbol_set),start,end)
+    }
     let options = eframe::NativeOptions::default();
     eframe::run_native(
         "SRS Box",
@@ -48,7 +79,6 @@ fn main() {
 
 enum OpenItem {
     Goal,
-    Result,
     SRS
 }
 
@@ -65,8 +95,8 @@ struct MyApp {
     goal_name : String,
     rules : Ruleset,
     path_channel: (
-        Sender<(String,rfd::FileHandle,OpenItem)>,
-        Receiver<(String,rfd::FileHandle,OpenItem)>,
+        Sender<(String,FileHandle,OpenItem)>,
+        Receiver<(String,FileHandle,OpenItem)>,
     )
 }
 
@@ -109,24 +139,22 @@ impl eframe::App for MyApp {
         //File opening loop
         loop {
             match self.path_channel.1.try_recv() {
-                Ok(message) => {
-                    match message.2 {
+                Ok((contents,fh, item_t)) => {
+                    match item_t {
                         OpenItem::Goal => {
-                            let path = PathBuf::from(message.1.file_name());
-                            
+                            let path = PathBuf::from(fh.file_name());
+                            println!("responding to new goal");
                             self.goal_name = path.file_name().unwrap().to_os_string().into_string().unwrap();
                             match path.extension().unwrap().to_str().unwrap() {
-                                "dfa" => {self.goal = serde_json::from_str(&message.0).unwrap()},
-                                "jff" => {self.goal = DFA::load_jflap_from_string(&message.0)},
+                                "dfa" => {self.goal = serde_json::from_str(&contents).unwrap()},
+                                "jff" => {self.goal = DFA::load_jflap_from_string(&contents)},
                                 _ => {}
                             }
                         }
                         OpenItem::SRS => {
-                            self.rules = Ruleset::from_string(&message.0);
-                            self.srs_text = message.0;
-                        }
-                        OpenItem::Result => {
-
+                            self.rules = Ruleset::from_string(&contents);
+                            println!("responded to new srs");
+                            self.srs_text = contents;
                         }
                     }
                 }
@@ -162,7 +190,7 @@ impl eframe::App for MyApp {
                             std::sync::mpsc::TryRecvError::Disconnected => {
                                 if cfg!(target_arch = "wasm32") {
                                     let event = self.dfa_content.as_ref().unwrap();
-                                    self.final_dfa = Some(crate::solver::event_to_dfa(&event.0,&event.1, &self.rules));
+                                    self.final_dfa = Some(srs_to_dfa::solver::event_to_dfa(&event.0,&event.1, &self.rules));
                                 }
                                 self.dfa_reciever = None
                             },
@@ -226,7 +254,7 @@ impl eframe::App for MyApp {
             if let Some(dfa) = &self.final_dfa {
                 ui.label(format!("{} States",dfa.state_transitions.len()));
                 if ui.button("Save DFA").clicked() {
-                    
+                    save_dfa(self.final_dfa.as_ref().unwrap().clone())
                 }
             }
 
@@ -249,10 +277,10 @@ impl MyApp {
         self.phase_reciever = Some(phase_rx);
     }
 }
-fn open_file(target : OpenItem, file_s: Sender<(String,rfd::FileHandle,OpenItem)>) {
+fn open_file(target : OpenItem, file_s: Sender<(String,FileHandle,OpenItem)>) {
     let task = match target {
         OpenItem::SRS => rfd::AsyncFileDialog::new().pick_file(),
-        _ => rfd::AsyncFileDialog::new().add_filter("Text files", &["dfa","jff"]).pick_file()
+        OpenItem::Goal => rfd::AsyncFileDialog::new().add_filter("Recognized DFA types", &["dfa","jff"]).pick_file(),
     };
     
     let async_f = async move {
@@ -260,18 +288,57 @@ fn open_file(target : OpenItem, file_s: Sender<(String,rfd::FileHandle,OpenItem)
         
         if let Some(opened_file) = opened_file_r {
             let funk = opened_file.read().await;
-            let file_str = String::from_utf8_lossy(&funk[..]);
-            file_s.send((file_str.to_string(),opened_file,target)).unwrap();
+            let contents = String::from_utf8_lossy(&funk[..]).into_owned();
+            file_s.send((contents,opened_file,target)).unwrap();
         }
     };
     execute(async_f);
 }
 #[cfg(not(target_arch = "wasm32"))]
-fn execute<F: std::future::Future<Output = ()> + 'static>(f: F) {
-    futures::executor::block_on(f);
+fn save_dfa(dfa : DFA) {
+    let task = rfd::AsyncFileDialog::new().add_filter("Recognized DFA types", &["dfa","jff"]).save_file();
+    let async_f = async move {
+        let opened_file_r = task.await;
+        
+        if let Some(opened_file) = opened_file_r {
+            let path = PathBuf::from(opened_file.file_name());
+            if path.extension().unwrap().to_str().unwrap() == "jff" {
+                opened_file.write(&dfa.save_jflap_to_bytes()).await.unwrap();
+            }else {
+                opened_file.write(&serde_json::to_string(&dfa).unwrap().as_bytes()).await.unwrap();
+            }
+        }
+    };
+    execute(async_f);
 }
 
 #[cfg(target_arch = "wasm32")]
-fn execute<F: std::future::Future<Output = ()> + 'static>(f: F) {
-    wasm_bindgen_futures::spawn_local(f);
+fn save_dfa(dfa : DFA) {
+    let task = rfd::AsyncFileDialog::new().add_filter("Recognized DFA types", &["dfa","jff"]).pick_file();
+    let async_f = async move {
+        let opened_file_r = task.await;
+        
+        if let Some(opened_file) = opened_file_r {
+            let path = PathBuf::from(opened_file.file_name());
+            if path.extension().unwrap().to_str().unwrap() == "jff" {
+                opened_file.write(&dfa.save_jflap_to_bytes()).await.unwrap();
+            }else {
+                opened_file.write(&serde_json::to_string(&dfa).unwrap().as_bytes()).await.unwrap();
+            }
+        }
+    };
+    execute(async_f);
 }
+
+
+
+
+
+
+
+
+/*#[cfg(not(target_arch = "wasm32"))]
+
+pub fn wbf_fix<S : 'static, F: std::future::Future<Output = S> + 'static>(f: F) -> S {
+    futures::executor::block_on(f)
+}*/

@@ -44,9 +44,14 @@ start carry0 - start
 
 #equality flag
 #shifts up only if elements are equal
-#prevents any other arthimetic on unqueried bits from being performed,
+#prevents any arthimetic on unqueried bits from being performed,
 #so in order to get to the start all bits must be equal 
-end - flag end
+#also ensures that the same value can't repeatedly earn flags by performing the beginning
+#of another arithmetic operation when it starts
+0|0 end - flag 0|V end
+1|1 end - flag carry2 1|V end
+
 1|1 flag - flag 1|1
 0|0 flag - flag 0|0
-start flag - flag start
+
+flag start - start flag
