@@ -167,9 +167,6 @@ pub trait Solver where Self : Sized + Clone  + Send + 'static {
         }
         for origin in 0..possible_dfa.state_transitions.len() {
             for rule_list in &self.get_ruleset().rules {
-                if rule_list.0 == &vec![10,11] {
-                    println!("i want real watchpoints")
-                }
                 let lhs = rule_list.0;
                 let mut parent = origin;
                 for i in 0..lhs.len() {
