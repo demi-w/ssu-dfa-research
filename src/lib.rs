@@ -3,6 +3,9 @@ pub mod builder;
 pub mod util;
 pub mod solver;
 pub mod test;
+pub mod ui;
+
+use ui::execute;
 
 use crate::util::DFA;
 use crate::util::*;
@@ -24,12 +27,3 @@ pub fn wbf_fix<S : 'static, F: std::future::Future<Output = S> + 'static>(f: F) 
     result.unwrap()
 }
 
-#[cfg(not(target_arch = "wasm32"))]
-pub fn execute<F: std::future::Future<Output = ()> + 'static>(f: F) {
-    futures::executor::block_on(f);
-}
-
-#[cfg(target_arch = "wasm32")]
-pub fn execute<F: std::future::Future<Output = ()> + 'static>(f: F) {
-    wasm_bindgen_futures::spawn_local(f);
-}
