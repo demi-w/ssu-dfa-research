@@ -38,23 +38,6 @@ use web_sys;
 
 #[cfg(not(target_arch = "wasm32"))]
 fn main() {
-    let oh_dear = DFA::jflap_load(&mut File::open("jffresults/lessbadcollatz.jff").unwrap());
-
-    let goal = DFA::jflap_load(&mut File::open("example_goals/collatz_cycle.jff").unwrap());
-
-    let mut ruleset_str = "".to_owned();
-    File::open("srs/collatz").unwrap().read_to_string(&mut ruleset_str);
-    let ruleset = Ruleset::from_string(&ruleset_str);
-
-    let solver = MinkidSolver::new(ruleset, goal);
-
-    solver.run_with_print(5);
-
-    match solver.is_superset(&oh_dear) {
-        Ok(_) => {println!("yippie")}
-        Err(e) => {println!("{}",e.0.to_string(&solver.rules.symbol_set))}
-    }
-
     let options = eframe::NativeOptions::default();
     eframe::run_native(
         "SRS Box",
