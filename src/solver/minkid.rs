@@ -156,12 +156,12 @@ impl Solver for MinkidSolver {
                     let mut lhs = vec![start_node];
                     let mut rhs = vec![start_node];
                     let mut p_rule_len = 1;
-                    while p_rule_len < lhs_str.len() && p_rule_len < rhs_str.len() {
+                    while p_rule_len <= lhs_str.len() && p_rule_len <= rhs_str.len() {
 
                         let mut potential_lhs_e = vec![];
 
                         for lhs_e in &lhs {
-                            if p_rule_len < lhs_str.len() {
+                            if p_rule_len <= lhs_str.len() {
                                 if let Some(e) = dfa_graph.edges_directed(*lhs_e,Outgoing).find(|x| *x.weight() == lhs_str[p_rule_len-1]) {
                                     potential_lhs_e.push(e)
                                 }
@@ -173,7 +173,7 @@ impl Solver for MinkidSolver {
                         let mut potential_rhs_e = vec![];
 
                         for rhs_e in &rhs {
-                            if p_rule_len < rhs_str.len() {
+                            if p_rule_len <= rhs_str.len() {
                                 if let Some(e) = dfa_graph.edges_directed(*rhs_e,Outgoing).find(|x| *x.weight() == rhs_str[p_rule_len-1]) {
                                     potential_rhs_e.push(e)
                                 }
@@ -186,10 +186,10 @@ impl Solver for MinkidSolver {
                         }
                         lhs.clear();
                         rhs.clear();
+                        let lhs_strip = if p_rule_len < lhs_str.len() {&lhs_str[p_rule_len..]} else {&lhs_str[..0]};
+                        let rhs_strip = if p_rule_len < rhs_str.len() {&rhs_str[p_rule_len..]} else {&rhs_str[..0]};
                         for potential_lhs_edge in &potential_lhs_e {
                             for potential_rhs_edge in &potential_rhs_e {
-                                let lhs_strip = if p_rule_len < lhs_str.len() {&lhs_str[p_rule_len..]} else {&lhs_str[..0]};
-                                let rhs_strip = if p_rule_len < rhs_str.len() {&rhs_str[p_rule_len..]} else {&rhs_str[..0]};
                                 self.add_link(&mut link_graph, potential_lhs_edge.target(), potential_rhs_edge.target(), lhs_strip, rhs_strip);
                             }
                         }
@@ -255,7 +255,7 @@ impl Solver for MinkidSolver {
             phase_events.send(dur).unwrap();
             last_time = Instant::now();
         }
-        
+        /*
         let mut debug_link_graph : DiGraph<String,(Vec<SymbolIdx>,Vec<SymbolIdx>)> = Graph::new();
         for i in 0..link_graph.node_count() {
             if i < *iteration_lens.last().unwrap() {
@@ -271,7 +271,7 @@ impl Solver for MinkidSolver {
         }
 
         let mut file = std::fs::File::create(format!("link_graph_debug/{}.dot",iteration_lens.len()-2)).unwrap();
-        file.write_fmt(format_args!("{:?}",petgraph::dot::Dot::new(&debug_link_graph)));
+        file.write_fmt(format_args!("{:?}",petgraph::dot::Dot::new(&debug_link_graph))); */
         
         //Alright, pretending/assuming that we've written that correctly, we move on to actually propagating ancestors!
         //this also sucks :(
@@ -344,9 +344,9 @@ impl Solver for MinkidSolver {
                             potential_incoming = link_graph.first_edge(pros_node, Incoming);
                         }
                     }
-
                     let mut potential_outgoing = link_graph.first_edge(pros_node, Outgoing);
                     while let Some(real_outgoing) = potential_outgoing {
+                        
                         potential_outgoing = link_graph.next_edge(real_outgoing, Outgoing);
                         let target = link_graph.edge_endpoints(real_outgoing).unwrap().1;
                         let rust_scared = link_graph[real_outgoing].clone();
@@ -609,7 +609,7 @@ impl MinkidSolver {
             let lhs_min = std::cmp::min(lhs_obligation.len(), edge.weight().0.len());
             let rhs_min = std::cmp::min(rhs_obligation.len(), edge.weight().1.len());
             //Check our proposed obligation against the current one. If ours is shorter, compare the prefixes of both such that they maintain equal length
-            if &edge.weight().0[..lhs_min] == lhs_obligation && &edge.weight().1[..rhs_min] == rhs_obligation {
+            if &edge.weight().0[..lhs_min] == &lhs_obligation[..lhs_min] && &edge.weight().1[..rhs_min] == &rhs_obligation[..rhs_min] {
                 //and the current edge has a greater obligation
                 if (lhs_obligation.len() == lhs_min && rhs_obligation.len() == rhs_min) && (edge.weight().0.len() > lhs_min || edge.weight().1.len() > rhs_min) {
                     death_row.push(edge.id());
@@ -629,7 +629,7 @@ impl MinkidSolver {
         }
         //TODO: There are currently circumstances where death row isn't empty and the link isn't added
         //This should only be possible if there's extraenous elements.
-        (should_add,!death_row.is_empty() && should_add)
+        (should_add,!death_row.is_empty())
     }
     fn minkids_to_tt(&self, sig_set : &Vec<Vec<SymbolIdx>>, minkids : &HashSet<NodeIndex>) -> BitVec {
         let mut result = bitvec![0;sig_set.len()];
