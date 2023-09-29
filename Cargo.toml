@@ -21,6 +21,7 @@ eframe = { version = "0.22.0", default-features = false, features = [
 ] }
 
 rfd = "0.12.0"
+gloo-file = "0.3.0"
 
 
 
