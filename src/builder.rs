@@ -11,12 +11,52 @@ pub fn build_1dpeg_result() -> DFA {
     }
 }
 
-pub fn build_threerulesolver<S>() -> S where S: Solver {
+pub fn build_all0() -> DFA {
+    //Written so that it can expand to work with any other symbol set as expected
+    let b_symbol_set = SymbolSet {
+        length : 1,
+        representations : vec!["0".to_owned()]
+    };
+    DFA {
+        starting_state : 0,
+        state_transitions : vec![vec![0]],
+        accepting_states : HashSet::from_iter(vec![0]),
+        symbol_set : b_symbol_set.clone()
+    }
+}
+
+pub fn build_onlyone1() -> DFA {
+    let b_symbol_set = SymbolSet {
+        length : 2,
+        representations : vec!["0".to_owned(),"1".to_owned()]
+    };
+    DFA {
+        starting_state : 0,
+        state_transitions : vec![vec![0,1],vec![1,2],vec![2,2]],
+        accepting_states : HashSet::from_iter(vec![1]),
+        symbol_set : b_symbol_set.clone()
+    }
+}
+
+pub fn build_onlyone2() -> DFA {
     let b_symbol_set = SymbolSet {
         length : 3,
         representations : vec!["0".to_owned(),"1".to_owned(),"2".to_owned()]
     };
-    let ruleset = Ruleset::from_vec(
+    DFA {
+        starting_state : 0,
+        state_transitions : vec![vec![0,2,1],vec![1,2,2],vec![2,2,2]],
+        accepting_states : HashSet::from_iter(vec![1]),
+        symbol_set : b_symbol_set.clone()
+    }
+}
+
+pub fn build_threerulesolver_rs() -> Ruleset {
+    let b_symbol_set = SymbolSet {
+        length : 3,
+        representations : vec!["0".to_owned(),"1".to_owned(),"2".to_owned()]
+    };
+    Ruleset::from_vec(
         vec![(vec![1,1,0],vec![0,0,1]),
                      (vec![0,1,1],vec![1,0,0]),
                      (vec![1,0,1],vec![0,1,0]),
@@ -26,41 +66,25 @@ pub fn build_threerulesolver<S>() -> S where S: Solver {
                      (vec![1,0,2],vec![0,2,0]),
         ],
         b_symbol_set.clone()
-    );
-    
-    let goal_dfa = DFA {
-        starting_state : 0,
-        state_transitions : vec![vec![0,2,1],vec![1,2,2],vec![2,2,2]],
-        accepting_states : HashSet::from_iter(vec![1]),
-        symbol_set : b_symbol_set.clone()
-    };
-    S::new(ruleset,goal_dfa)
+    )
 }
 
-pub fn build_defaultsolver<S>() -> S where S: Solver {
+pub fn build_defaultsolver_rs() -> Ruleset {
     let b_symbol_set = SymbolSet {
         length : 3,
         representations : vec!["0".to_owned(),"1".to_owned(),"2".to_owned()]
     };
-    let ruleset = Ruleset::from_vec(
+    Ruleset::from_vec(
         vec![(vec![1,1,0],vec![0,0,1]),
                      (vec![0,1,1],vec![1,0,0]),
                      (vec![2,1,0],vec![0,0,2]),
                      (vec![0,1,2],vec![2,0,0]),
         ],
         b_symbol_set.clone()
-    );
-    
-    let goal_dfa = DFA {
-        starting_state : 0,
-        state_transitions : vec![vec![0,2,1],vec![1,2,2],vec![2,2,2]],
-        accepting_states : HashSet::from_iter(vec![1]),
-        symbol_set : b_symbol_set.clone()
-    };
-    S::new(ruleset,goal_dfa)
+    )
 }
 
-pub fn build_2xnswap<S>() -> S where S: Solver {
+pub fn build_2xnswap_rs() -> Ruleset {
     let symbol_set = SymbolSet {
         length : 3,
         representations : vec!["0".to_owned(),"1".to_owned(),"2".to_owned()]
@@ -76,72 +100,40 @@ pub fn build_2xnswap<S>() -> S where S: Solver {
         rules.push((vec![0+big,1+mid,1+sml],vec![1+big,0+mid,0+sml]));
     }
 
-    let ruleset = Ruleset::from_vec(
+    Ruleset::from_vec(
         rules,
         symbol_set.clone()
-    );
-
-    let old_dfa = build_1dpeg_result();
-    let mut new_transitions = vec![];
-
-    let error_state = 10;
-    for state in old_dfa.state_transitions {
-        new_transitions.push(vec![state[0],state[1],error_state]);
-
-    }
-    let goal_dfa = DFA { 
-        starting_state: 0, 
-        state_transitions: new_transitions, 
-        accepting_states: old_dfa.accepting_states, 
-        symbol_set: symbol_set.clone()
-     };
-     S::new(ruleset,goal_dfa)
+    )
 }
 
-pub fn build_default1dpeg<S>() -> S where S: Solver {
+pub fn build_1dpeg_rs() -> Ruleset {
     let b_symbol_set = SymbolSet {
         length : 2,
         representations : vec!["0".to_owned(),"1".to_owned()]
     };
-    let ruleset = Ruleset::from_vec(
+    Ruleset::from_vec(
         vec![(vec![1,1,0],vec![0,0,1]),
                      (vec![0,1,1],vec![1,0,0]),
         ],
         b_symbol_set.clone()
-    );
-    
-    let goal_dfa = DFA {
-        starting_state : 0,
-        state_transitions : vec![vec![0,1],vec![1,2],vec![2,2]],
-        accepting_states : HashSet::from_iter(vec![1]),
-        symbol_set : b_symbol_set.clone()
-    };
-    S::new(ruleset,goal_dfa)
+    )
 }
 
-pub fn build_threerule1dpeg<S>() -> S where S: Solver {
+pub fn build_threerule1dpeg_rs() -> Ruleset {
     let b_symbol_set = SymbolSet {
         length : 2,
         representations : vec!["0".to_owned(),"1".to_owned()]
     };
-    let ruleset = Ruleset::from_vec(
+    Ruleset::from_vec(
         vec![(vec![1,1,0],vec![0,0,1]),
                      (vec![0,1,1],vec![1,0,0]),
                      (vec![1,0,1],vec![0,1,0])
         ],
         b_symbol_set.clone()
-    );
-    
-    let goal_dfa = DFA {
-        starting_state : 0,
-        state_transitions : vec![vec![0,1],vec![1,2],vec![2,2]],
-        accepting_states : HashSet::from_iter(vec![1]),
-        symbol_set : b_symbol_set.clone()
-    };
-    S::new(ruleset,goal_dfa)
+    )
 }
 
-pub fn build_flip<S>() -> S where S: Solver {
+pub fn build_flip_rs() -> Ruleset {
     let b_symbol_set = SymbolSet {
         length : 2,
         representations : vec!["0".to_owned(),"1".to_owned()]
@@ -150,21 +142,13 @@ pub fn build_flip<S>() -> S where S: Solver {
     for i in 0..8 {
         rules_vec.push((vec![i/4 % 2, i / 2 % 2, i % 2],vec![1-i/4 % 2, 1-i / 2 % 2, 1-i % 2]))
     }
-    let ruleset = Ruleset::from_vec(
+    Ruleset::from_vec(
         rules_vec,
         b_symbol_set.clone()
-    );
-    
-    let goal_dfa = DFA {
-        starting_state : 0,
-        state_transitions : vec![vec![0,1],vec![1,1]],
-        accepting_states : HashSet::from_iter(vec![0]),
-        symbol_set : b_symbol_set.clone()
-    };
-    S::new(ruleset,goal_dfa)
+    )
 }
 
-pub fn build_flipx3<S>() -> S where S: Solver {
+pub fn build_flipx3_rs() -> Ruleset {
     let b_symbol_set = SymbolSet {
         length : 2,
         representations : vec!["0".to_owned(),"1".to_owned()]
@@ -248,20 +232,10 @@ pub fn build_flipx3<S>() -> S where S: Solver {
         representations : vec!["000".to_owned(),"001".to_owned(),"010".to_owned(),"011".to_owned(),"100".to_owned(),"101".to_owned(),"110".to_owned(),"111".to_owned()] //whoops! lol
     };
     
-    let ruleset = Ruleset::from_vec(new_rules,by_k_symbol_set.clone());
-    
-    
-    let goal_dfa = DFA {
-        starting_state : 0,
-        state_transitions : vec![vec![0,1,1,1,1,1,1,1],vec![1,1,1,1,1,1,1,1]],
-        accepting_states : HashSet::from_iter(vec![0]),
-        symbol_set : by_k_symbol_set.clone()
-    };
-    
-    S::new(ruleset,goal_dfa)
+    Ruleset::from_vec(new_rules,by_k_symbol_set.clone())
 }
 
-pub fn build_default2dpegx3<S>() -> S where S: Solver {
+fn build_default2dpegx3_rs() -> Ruleset {
     let b_symbol_set = SymbolSet {
         length : 2,
         representations : vec!["0".to_owned(),"1".to_owned()]
@@ -344,8 +318,63 @@ pub fn build_default2dpegx3<S>() -> S where S: Solver {
         representations : vec!["000".to_owned(),"001".to_owned(),"010".to_owned(),"011".to_owned(),"100".to_owned(),"101".to_owned(),"110".to_owned(),"111".to_owned()] //whoops! lol
     };
     
-    let ruleset = Ruleset::from_vec(new_rules,by_k_symbol_set.clone());
-    
+    Ruleset::from_vec(new_rules,by_k_symbol_set.clone())
+}
+
+pub fn build_threerulesolver<S>() -> S where S: Solver {
+    S::new(build_threerulesolver_rs(),build_onlyone2())
+}
+
+pub fn build_defaultsolver<S>() -> S where S: Solver {
+    S::new(build_defaultsolver_rs(),build_onlyone2())
+}
+
+
+
+pub fn build_2xnswap<S>() -> S where S: Solver {
+    let symbol_set = SymbolSet {
+        length : 3,
+        representations : vec!["0".to_owned(),"1".to_owned(),"2".to_owned()]
+    };
+
+    let ruleset = build_2xnswap_rs();
+
+    let old_dfa = build_1dpeg_result();
+    let mut new_transitions = vec![];
+
+    let error_state = 10;
+    for state in old_dfa.state_transitions {
+        new_transitions.push(vec![state[0],state[1],error_state]);
+
+    }
+    let goal_dfa = DFA { 
+        starting_state: 0, 
+        state_transitions: new_transitions, 
+        accepting_states: old_dfa.accepting_states, 
+        symbol_set: symbol_set.clone()
+     };
+     S::new(ruleset,goal_dfa)
+}
+
+pub fn build_default1dpeg<S>() -> S where S: Solver {
+    S::new(build_1dpeg_rs(),build_onlyone1())
+}
+
+pub fn build_threerule1dpeg<S>() -> S where S: Solver {
+    S::new(build_threerule1dpeg_rs(),build_onlyone1())
+}
+
+pub fn build_flip<S>() -> S where S: Solver {
+    S::new(build_flip_rs(),build_all0())
+}
+
+pub fn build_flipx3<S>() -> S where S: Solver {
+    S::new(build_flipx3_rs(),build_all0())
+}
+
+pub fn build_default2dpegx3<S>() -> S where S: Solver {
+
+    let k = 3;
     let root_dfa = build_1dpeg_result();
 
     let mut trans_table = vec![vec![1,2,2+16,2+16*2,2+16*2, 10,2,10],vec![1,3,3+16,3+16*2,3+16*2, 10,3,10]];
@@ -369,7 +398,10 @@ pub fn build_default2dpegx3<S>() -> S where S: Solver {
         new_accepting.insert(i + 32);
     }  
 
-    
+    let by_k_symbol_set = SymbolSet {
+        length : 2_u32.pow(k as u32) as usize,
+        representations : vec!["000".to_owned(),"001".to_owned(),"010".to_owned(),"011".to_owned(),"100".to_owned(),"101".to_owned(),"110".to_owned(),"111".to_owned()] //whoops! lol
+    };
     
     let goal_dfa = DFA {
         starting_state : 0,
@@ -379,5 +411,5 @@ pub fn build_default2dpegx3<S>() -> S where S: Solver {
     };
     
     
-    S::new(ruleset,goal_dfa)
+    S::new(build_default2dpegx3_rs(),goal_dfa)
 }
