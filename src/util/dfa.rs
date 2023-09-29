@@ -35,6 +35,61 @@ use wasm_bindgen_futures;
 
 impl DFA {
 
+    pub fn expand_to_symset(&mut self, expanded_ss : SymbolSet) {
+
+        //Find all elements of the expanded symbol set that do not exist in the dfa's
+        let mut expanded_idx = 0;
+        let mut holes = vec![];
+        for (idx,rep) in self.symbol_set.representations.iter().enumerate() {
+            while rep != &expanded_ss.representations[expanded_idx] {
+                holes.push(idx);
+                expanded_idx+=1;
+            }
+            expanded_idx+=1;
+        }
+        while expanded_idx < expanded_ss.length {
+            holes.push(usize::MAX);
+            expanded_idx+=1;
+        }
+
+        //Find/create an error state that all of the new transitions will be routed to
+        let mut error_state = None;
+        for i in 0..self.state_transitions.len() {
+            if self.accepting_states.contains(&i) {
+                continue;
+            }
+            if self.state_transitions[i].iter().all(|x| x == &i) {
+                error_state = Some(i);
+            }
+        } 
+        let error_state = match error_state {
+            Some(s) => {s}
+            None => {
+                self.state_transitions.push(vec![self.state_transitions.len();self.symbol_set.length]);
+                self.state_transitions.len() - 1
+            }
+        };
+
+        //Modify transition table to include 
+        for i in 0..self.state_transitions.len() {
+            let mut new_trans = Vec::with_capacity(expanded_ss.length);
+            let mut holes_encountered = 0;
+            for j in 0..self.state_transitions[i].len() {
+                while holes_encountered < holes.len() && holes[holes_encountered] == j {
+                    new_trans.push(error_state);
+                    holes_encountered+=1;
+                }
+                new_trans.push(self.state_transitions[i][j]);
+            }
+            while holes_encountered < holes.len() {
+                new_trans.push(error_state);
+                holes_encountered+=1;
+            }
+            self.state_transitions[i] = new_trans;
+        }
+        self.symbol_set = expanded_ss;
+    }
+
     pub fn ss_eq(&self, other: &Self, our_ss : &Vec<BitVec>, other_ss : &Vec<BitVec>) -> Vec<(usize,usize,Vec<usize>,Vec<usize>)> {
         let mut stack = HashSet::new();
         stack.insert((self.starting_state,other.starting_state));

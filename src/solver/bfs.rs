@@ -44,8 +44,8 @@ impl Solver for BFSSolver {
         &self.rules
     }
 
-    fn new(ruleset:Ruleset, goal :DFA) -> Self {
-        assert_eq!(ruleset.symbol_set,goal.symbol_set);
+    fn new(mut ruleset:Ruleset, mut goal :DFA) -> Self {
+        Self::ensure_expansion(&mut ruleset,&mut goal).unwrap();
         let (min_input, max_input) = BFSSolver::sized_init(&ruleset);
         BFSSolver { 
             rules: ruleset,

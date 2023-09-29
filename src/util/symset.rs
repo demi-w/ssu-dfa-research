@@ -12,6 +12,7 @@ impl Ruleset {
     pub fn new(rules : HashMap<Vec<SymbolIdx>,Vec<Vec<SymbolIdx>>>, symbol_set : SymbolSet) -> Self {
         Ruleset {rules : rules, symbol_set : symbol_set}
     }
+
     pub fn from_vec(rules : Vec<(Vec<SymbolIdx>,Vec<SymbolIdx>)>, symbol_set : SymbolSet) -> Self {
         let mut rule_hash : HashMap<Vec<SymbolIdx>,Vec<Vec<SymbolIdx>>> = HashMap::new();
         //Should use a fancy map function here I admit
@@ -93,6 +94,27 @@ impl Ruleset {
     
         Ruleset {rules: rules, symbol_set: sym_set}
     }
+
+    pub fn expand_to_symset(&mut self,  expanded_ss : SymbolSet) {
+        let mut translate_map = HashMap::new();
+        let mut expanded_idx = 0;
+        for (idx,rep) in self.symbol_set.representations.iter().enumerate() {
+            while rep != &expanded_ss.representations[expanded_idx] {
+                expanded_idx+=1;
+            }
+            translate_map.insert(idx as u8, expanded_idx as u8);
+        }
+        let mut new_rules = HashMap::new();
+        for (lhs,rhs) in self.rules.iter_mut() {
+            let mut new_lhs = lhs.clone();
+            new_lhs.iter_mut().for_each(|x| *x = *translate_map.get(x).unwrap());
+            rhs.iter_mut().for_each(|i_vec| i_vec.iter_mut().for_each(|x| *x = *translate_map.get(x).unwrap()));
+            new_rules.insert(new_lhs, rhs.to_owned());
+        }
+        self.rules = new_rules;
+        self.symbol_set = expanded_ss;
+    }
+
     pub fn to_string(&self) -> String {
         let mut result = "".to_owned();
         for rule in &self.rules {
@@ -173,5 +195,9 @@ impl SymbolSet {
             syms.push(self.representations.iter().position(|r| r == str).unwrap() as SymbolIdx);
         }
         syms
+    }
+    pub fn is_subset(&self, other : &Self) -> bool {
+        //Isn't this wonderful? Exactly how set theory defines it :3
+        self.representations.iter().all(|x| other.representations.iter().any(|y| x == y))
     }
 }

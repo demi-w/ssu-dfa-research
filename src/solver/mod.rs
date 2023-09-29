@@ -99,6 +99,19 @@ pub trait Solver where Self : Sized + Clone  + Send + 'static {
 
     fn new(ruleset : Ruleset, goal : DFA) -> Self;
 
+    fn ensure_expansion(ruleset : &mut Ruleset, goal : &mut DFA) -> Result<(),()>{
+        if ruleset.symbol_set == goal.symbol_set {Ok(())} 
+        else if ruleset.symbol_set.is_subset(&goal.symbol_set) {
+            ruleset.expand_to_symset(goal.symbol_set.clone());
+            Ok(())
+        } else if goal.symbol_set.is_subset(&ruleset.symbol_set) {
+            goal.expand_to_symset(ruleset.symbol_set.clone());
+            Ok(())
+        } else {
+            Err(())
+        }
+    }
+
     fn get_ruleset(&self) -> &Ruleset;
 
     fn get_goal(&self) -> &DFA;

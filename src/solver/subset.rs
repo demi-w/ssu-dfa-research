@@ -34,8 +34,8 @@ impl Solver for SubsetSolver {
         &self.goal
     }
 
-    fn new(ruleset : Ruleset, goal : DFA) -> Self {
-        assert_eq!(ruleset.symbol_set,goal.symbol_set);
+    fn new(mut ruleset : Ruleset, mut goal : DFA) -> Self {
+        Self::ensure_expansion(&mut ruleset,&mut goal).unwrap();
         let (min_input, max_input) = SubsetSolver::sized_init(&ruleset);
         SubsetSolver { goal: goal, rules: ruleset, sig_sets : vec![], solved_yet : vec![] , trans_table : vec![], min_input : min_input, max_input : max_input, unique_sigs : HashMap::new() }
     }

@@ -30,8 +30,8 @@ impl Solver for HashSolver {
         &self.goal
     }
 
-    fn new(ruleset : Ruleset, goal : DFA) -> Self {
-        assert_eq!(ruleset.symbol_set,goal.symbol_set);
+    fn new(mut ruleset : Ruleset, mut goal : DFA) -> Self {
+        Self::ensure_expansion(&mut ruleset,&mut goal).unwrap();
         let (min_input, max_input) = HashSolver::sized_init(&ruleset);
         HashSolver { min_input : min_input, max_input : max_input, goal: goal, rules: ruleset, board_solutions : HashMap::new() }
     }

@@ -61,8 +61,8 @@ impl Solver for MinkidSolver {
         vec!["Build rule graph".to_owned(),"Propagate pure links".to_owned(), "Propagate minkids".to_owned(), "Remove duplicates".to_owned()]
     }
 
-    fn new(ruleset : Ruleset, goal : DFA) -> Self {
-        assert_eq!(ruleset.symbol_set,goal.symbol_set);
+    fn new(mut ruleset : Ruleset, mut goal : DFA) -> Self {
+        Self::ensure_expansion(&mut ruleset,&mut goal).unwrap();
         let (min_input, max_input) = MinkidSolver::sized_init(&ruleset);
         MinkidSolver { goal: goal, rules: ruleset, max_input: max_input, min_input: min_input, goal_minkids: vec![], ss_link_graph: Graph::new(), ss_idx_to_link: vec![] }
     }
