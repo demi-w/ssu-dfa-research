@@ -1,6 +1,6 @@
 use crate::{SymbolSet, SymbolIdx, wbf_fix};
 use serde::{Deserialize, Serialize};
-use std::{collections::{HashSet, HashMap}, io::Read, hash::Hash};
+use std::{collections::{HashSet, HashMap, VecDeque}, io::Read, hash::Hash, result};
 use xml::{writer::{EmitterConfig, XmlEvent},reader::EventReader};
 
 use serde_json::Result;
@@ -32,6 +32,8 @@ type File = FileHandle;
 
 #[cfg(target_arch = "wasm32")]
 use wasm_bindgen_futures;
+
+use super::Ruleset;
 
 impl DFA {
 
@@ -409,8 +411,9 @@ impl DFA {
             );
         (contents.0, Self::load_jflap_from_string(&contents.1))
     }
-    
+    pub fn minify(&mut self) {}
 
+    pub fn one_rule_expand(&self, rules : &Ruleset) -> DFA{ return self.clone()}
 }
 
 impl PartialEq for DFA {

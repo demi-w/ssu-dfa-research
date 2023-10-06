@@ -87,9 +87,9 @@ impl Ruleset {
         for (key, val) in rules_str {
             let mut rhs = vec![];
             for result in val {
-               rhs.push(sym_set.string_to_symbols(&result));
+               rhs.push(sym_set.string_to_symbols(&result).unwrap());
             }
-            rules.insert(sym_set.string_to_symbols(&key), rhs);
+            rules.insert(sym_set.string_to_symbols(&key).unwrap(), rhs);
         }
     
     

@@ -58,12 +58,19 @@ impl SymbolSet {
         string.pop();
         string
     }
-    pub fn string_to_symbols(&self, symbols : &Vec<&str>) -> Vec<SymbolIdx>{
+    pub fn string_to_symbols(&self, symbols : &Vec<&str>) -> Result<Vec<SymbolIdx>,usize>{
         let mut syms = vec![];
-        for str in symbols {
-            syms.push(self.representations.iter().position(|r| r == str).unwrap() as SymbolIdx);
+        for (idx,str) in symbols.iter().enumerate() {
+            if str == &"" {
+                continue
+            }
+            match self.representations.iter().position(|r| r == str) {
+                Some(sym) => {syms.push(sym as SymbolIdx)},
+                None => {return Err(idx)}
+            }
+            
         }
-        syms
+        Ok(syms)
     }
     pub fn is_subset(&self, other : &Self) -> bool {
         //Isn't this wonderful? Exactly how set theory defines it :3

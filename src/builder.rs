@@ -51,6 +51,44 @@ pub fn build_onlyone2() -> DFA {
     }
 }
 
+pub fn build_2dpeg_goal() -> DFA {
+    let k = 3;
+    let root_dfa = build_1dpeg_result();
+
+    let mut trans_table = vec![vec![1,2,2+16,2+16*2,2+16*2, 10,2,10],vec![1,3,3+16,3+16*2,3+16*2, 10,3,10]];
+    for point in 0..=2 {
+        let identical_indices = vec![vec![1,6],vec![2],vec![4,3]];
+        
+        
+        for state in 2..root_dfa.state_transitions.len() {
+            let mut new_vec = vec![10;8];
+            for thing in &identical_indices[point] {
+                new_vec[*thing] = root_dfa.state_transitions[state][1] + point * 16;
+            }
+            new_vec[0] = root_dfa.state_transitions[state][0] + point * 16;
+            trans_table.push(new_vec);
+        }
+        
+    }
+    let mut new_accepting = root_dfa.accepting_states.clone();
+    for i in root_dfa.accepting_states {
+        new_accepting.insert(i + 16);
+        new_accepting.insert(i + 32);
+    }  
+
+    let by_k_symbol_set = SymbolSet {
+        length : 2_u32.pow(k as u32) as usize,
+        representations : vec!["000".to_owned(),"001".to_owned(),"010".to_owned(),"011".to_owned(),"100".to_owned(),"101".to_owned(),"110".to_owned(),"111".to_owned()] //whoops! lol
+    };
+    
+    DFA {
+        starting_state : 0,
+        state_transitions : trans_table,
+        accepting_states : new_accepting,
+        symbol_set : by_k_symbol_set.clone()
+    }
+}
+
 pub fn build_threerulesolver_rs() -> Ruleset {
     let b_symbol_set = SymbolSet {
         length : 3,
@@ -373,43 +411,5 @@ pub fn build_flipx3<S>() -> S where S: Solver {
 }
 
 pub fn build_default2dpegx3<S>() -> S where S: Solver {
-
-    let k = 3;
-    let root_dfa = build_1dpeg_result();
-
-    let mut trans_table = vec![vec![1,2,2+16,2+16*2,2+16*2, 10,2,10],vec![1,3,3+16,3+16*2,3+16*2, 10,3,10]];
-    for point in 0..=2 {
-        let identical_indices = vec![vec![1,6],vec![2],vec![4,3]];
-        
-        
-        for state in 2..root_dfa.state_transitions.len() {
-            let mut new_vec = vec![10;8];
-            for thing in &identical_indices[point] {
-                new_vec[*thing] = root_dfa.state_transitions[state][1] + point * 16;
-            }
-            new_vec[0] = root_dfa.state_transitions[state][0] + point * 16;
-            trans_table.push(new_vec);
-        }
-        
-    }
-    let mut new_accepting = root_dfa.accepting_states.clone();
-    for i in root_dfa.accepting_states {
-        new_accepting.insert(i + 16);
-        new_accepting.insert(i + 32);
-    }  
-
-    let by_k_symbol_set = SymbolSet {
-        length : 2_u32.pow(k as u32) as usize,
-        representations : vec!["000".to_owned(),"001".to_owned(),"010".to_owned(),"011".to_owned(),"100".to_owned(),"101".to_owned(),"110".to_owned(),"111".to_owned()] //whoops! lol
-    };
-    
-    let goal_dfa = DFA {
-        starting_state : 0,
-        state_transitions : trans_table,
-        accepting_states : new_accepting,
-        symbol_set : by_k_symbol_set.clone()
-    };
-    
-    
-    S::new(build_default2dpegx3_rs(),goal_dfa)
+    S::new(build_default2dpegx3_rs(),build_2dpeg_goal())
 }
