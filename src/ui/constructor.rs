@@ -1,29 +1,37 @@
-use std::{sync::mpsc::Receiver, thread::JoinHandle, time::Duration};
+use std::{sync::mpsc::Receiver, thread::JoinHandle, time::Duration, fmt::format};
 
-use egui::Ui;
+use egui::{Ui, Color32, RichText};
 
-use crate::{solver::{DFAStructure, SSStructure, Solver}, util::{DFA, Ruleset}};
+use crate::{solver::{DFAStructure, SSStructure, Solver, RuleGraphRoot}, util::{DFA, Ruleset, SymbolIdx, SymbolSet}};
 use crate::solver::MinkidSolver;
 
-use crate::ui::Instant;
+use crate::ui::{Instant,execute};
+
+use std::path::PathBuf;
 
 
-pub struct DFAConstructor {
+pub struct DFAConstructor<S> where S : Solver {
     dfa_reciever : Option<Receiver<(DFAStructure,SSStructure)>>,
     phase_reciever : Option<Receiver<Duration>>,
     pub dfa_content : Option<(DFAStructure,SSStructure)>,
-    last_rules : Option<Ruleset>,
+    last_solver : Option<S>,
     pub final_dfa : Option<DFA>,
     handle : Option<JoinHandle<DFA>>,
+    solve_string : String,
+    last_solve_string : Option<Vec<SymbolIdx>>,
+    solve_path : Option<Result<Vec<(usize,usize,usize,Vec<SymbolIdx>)>,()>>,
     pub phase_content : Vec<Vec<Duration>>,
     pub phase_idx : usize,
     pub last_phase_msg : Instant,
     pub max_duration : f64,
     pub has_started : bool,
-    pub has_finished : bool
+    pub has_finished : bool,
+    k : usize,
+    verify_run : bool,
+    is_superset : Result<(),(RuleGraphRoot,usize,usize)>,
 }
 
-impl DFAConstructor {
+impl<S> DFAConstructor<S> where S : Solver{
     pub fn update(&mut self, ui : &mut Ui) {
 
     if cfg!(not(target_arch = "wasm32")) {
@@ -31,8 +39,17 @@ impl DFAConstructor {
         std::mem::swap(&mut handle, &mut self.handle);
         if let Some(h) = handle {
             if h.is_finished() {
-                self.final_dfa = Some(h.join().unwrap());
-                self.has_finished = true;
+                let new_dfa = h.join().unwrap();
+                self.is_superset = self.last_solver.as_ref().unwrap().is_superset(&new_dfa);
+                if self.verify_run && (self.final_dfa.is_none() || &new_dfa != self.final_dfa.as_ref().unwrap()) && !self.is_superset.is_ok() {
+                    self.k += 1;
+                    self.run_dfa(self.last_solver.as_ref().unwrap().clone(), self.k, true);
+                } else {
+                    
+                    self.has_finished = true;
+                }
+                self.final_dfa = Some(new_dfa);
+
             } else {
                 self.handle = Some(h);
             }                
@@ -70,7 +87,7 @@ impl DFAConstructor {
                         std::sync::mpsc::TryRecvError::Disconnected => {
                             if cfg!(target_arch = "wasm32") {
                                 let event = self.dfa_content.as_ref().unwrap();
-                                self.final_dfa = Some(crate::solver::event_to_dfa(&event.0,&event.1, self.last_rules.as_ref().unwrap()));
+                                self.final_dfa = Some(crate::solver::event_to_dfa(&event.0,&event.1, self.last_solver.as_ref().unwrap().get_ruleset()));
                             }
                             self.dfa_reciever = None;
                             self.has_finished = true;
@@ -88,9 +105,44 @@ impl DFAConstructor {
     }
 
     if let Some(dfa) = &self.final_dfa {
-        ui.label(format!("{} States",dfa.state_transitions.len()));
+        match &self.is_superset {
+            Ok(_) => ui.label("passes superset test!"),
+            Err((rgr,source,target)) => ui.label(format!("{} {} {}",rgr.to_string(&dfa.symbol_set),source,target))
+        };
         if ui.button("Save DFA").clicked() {
             save_dfa(self.final_dfa.as_ref().unwrap().clone())
+        }
+        if let Some(solver) = &self.last_solver {
+            ui.label("String to solve:");
+            ui.text_edit_singleline(&mut self.solve_string);
+            if ui.button("Solve String").clicked() {
+                let input_str = dfa.symbol_set.string_to_symbols(&self.solve_string.to_string().split(" ").collect()).unwrap();
+                self.solve_path = Some(solver.solve_string_annotated(dfa, &input_str));
+                self.last_solve_string = Some(input_str);
+            }
+            if let Some(solution_path) = &self.solve_path {
+                if let Ok(path) = solution_path {
+                    if path.len() == 0 {
+                        ui.label("This string matches the goal DFA without any SRS applications.");
+                    }else {
+                        egui::containers::scroll_area::ScrollArea::vertical().id_source("solve_path").show(ui, |ui| {
+                        ui.group(|ui| {
+                            let start_str = self.last_solve_string.as_ref().unwrap();
+
+                            render_path_element(ui, &dfa.symbol_set, start_str, &path[0].3, path[0].0, path[0].1, path[0].2);
+
+                            for path_idx in 1..path.len() {
+                                ui.separator();
+                                render_path_element(ui, &dfa.symbol_set, &path[path_idx-1].3, &path[path_idx].3, path[path_idx].0, path[path_idx].1, path[path_idx].2);
+                            }
+                        });
+                        });
+                    }
+                } else {
+                    ui.label("According to the generated DFA, this string is unsolvable!");
+                }
+            }
+
         }
         /*if cfg!(target_arch = "wasm32") {
             ui.hyperlink(&self.blob_link);
@@ -101,35 +153,37 @@ impl DFAConstructor {
     }
 
     #[cfg(not(target_arch = "wasm32"))]
-    fn run_dfa_arch<S>(&mut self, solver : S, k : usize) where S : Solver{
+    fn run_dfa_arch(&mut self, solver : S, k : usize){
         let (dfa_rx, phase_rx, temp_h) = solver.run_debug(k); 
         self.dfa_reciever = Some(dfa_rx);
         self.phase_reciever = Some(phase_rx);
         self.handle = Some(temp_h);
     }
     #[cfg(target_arch = "wasm32")]
-    fn run_dfa_arch<S>(&mut self, solver : S, k : usize) where S : Solver{
+    fn run_dfa_arch(&mut self, solver : S, k : usize){
         let (dfa_rx, phase_rx) = solver.run_debug(k); 
         self.dfa_reciever = Some(dfa_rx);
         self.phase_reciever = Some(phase_rx);
     }
-    pub fn run_dfa<S>(&mut self, solver : S, k : usize) where S : Solver{
+    pub fn run_dfa(&mut self, solver : S, k : usize, verify_run : bool){
         if self.has_started == true && self.has_finished == false {
             return;
         }
+        self.verify_run = verify_run;
         self.final_dfa = None;
+        self.k = k;
         self.phase_content = vec![vec![]; MinkidSolver::get_phases().len()];
         self.last_phase_msg = Instant::now();
         self.max_duration = 0.0;
-        self.last_rules = Some(solver.get_ruleset().clone());
         self.has_finished = false;
         self.has_started = true;
+        self.last_solver = Some(solver.clone());
         self.run_dfa_arch(solver, k);
     }
 
 }
 
-impl Default for DFAConstructor {
+impl<S> Default for DFAConstructor<S> where S : Solver{
     fn default() -> Self {
         Self { 
             dfa_reciever : None,
@@ -137,21 +191,25 @@ impl Default for DFAConstructor {
             dfa_content : None,
             final_dfa : None,
             handle : None,
-            last_rules : None,
             phase_content : vec![vec![]; MinkidSolver::get_phases().len()],
             phase_idx : 0,
             last_phase_msg : Instant::now(),
             max_duration : 0.0,
             has_started: Default::default(), 
-            has_finished: Default::default() }
+            has_finished: Default::default(),
+            solve_string : "".to_owned(),
+            solve_path : None,
+            last_solver : None,
+            last_solve_string : None,
+            verify_run : true,
+            is_superset : Ok(()),
+            k : 5
+        }
     }
 }
 
 #[cfg(not(target_arch = "wasm32"))]
 fn save_dfa(dfa : DFA) {
-    use std::path::PathBuf;
-
-    use crate::ui::execute;
 
     let task = rfd::AsyncFileDialog::new().add_filter("Recognized DFA types", &["dfa","jff"]).save_file();
     let async_f = async move {
@@ -185,4 +243,45 @@ fn save_dfa(dfa : DFA) {
         }
     };
     execute(async_f);
+}
+
+fn render_path_element(ui : &mut Ui, symset : &SymbolSet, lhs : &Vec<SymbolIdx>, rhs : &Vec<SymbolIdx>, lftmst_idx : usize, lhs_len : usize, rhs_len : usize) {
+    ui.horizontal(|ui| {
+        //Awkward spacing otherwise
+        
+        let mut print_vec = vec![0;lftmst_idx];
+        if lftmst_idx > 0 {
+            print_vec.clone_from_slice(&lhs[..lftmst_idx]);
+            ui.monospace(format!("{}",symset.symbols_to_string(&print_vec)));
+        }
+        if lhs_len > 0 {
+            print_vec = vec![0;lhs_len];
+            print_vec.clone_from_slice(&lhs[lftmst_idx..(lftmst_idx+lhs_len)]);
+            let rt = RichText::new(format!("{}",symset.symbols_to_string(&print_vec))).color(Color32::RED);
+            ui.monospace(rt);
+        }
+
+        print_vec = vec![0;lhs.len()-lftmst_idx-lhs_len];
+        print_vec.clone_from_slice(&lhs[(lftmst_idx+lhs_len)..]);
+        ui.monospace(format!("{}",symset.symbols_to_string(&print_vec)));
+    });
+    ui.horizontal(|ui| {
+        
+        let mut print_vec = vec![0;lftmst_idx];
+        if lftmst_idx > 0 {
+            print_vec.clone_from_slice(&rhs[..lftmst_idx]);
+            ui.monospace(format!("{}",symset.symbols_to_string(&print_vec)));
+        }
+
+        if rhs_len > 0 {
+            print_vec = vec![0;rhs_len];
+            print_vec.clone_from_slice(&rhs[lftmst_idx..(lftmst_idx+rhs_len)]);
+            let rt = RichText::new(format!("{}",symset.symbols_to_string(&print_vec))).color(Color32::RED);
+            ui.monospace(rt);
+        }
+
+        print_vec = vec![0;rhs.len()-lftmst_idx-rhs_len];
+        print_vec.clone_from_slice(&rhs[(lftmst_idx+rhs_len)..]);
+        ui.monospace(format!("{}",symset.symbols_to_string(&print_vec)));
+    });
 }

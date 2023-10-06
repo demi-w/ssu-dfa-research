@@ -67,7 +67,7 @@ fn main() {
 
 
 struct MyApp {
-    dfa_constructor : DFAConstructor,
+    dfa_constructor : DFAConstructor<MinkidSolver>,
     prep_panel : PrepPanel,
     c_visualizer : CVisualizer,
     blob_link : String
@@ -89,12 +89,11 @@ impl eframe::App for MyApp {
 
     fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
         ctx.request_repaint();
-        let symset_err = self.prep_panel.goal.symbol_set != self.prep_panel.rules.symbol_set;
 
         egui::CentralPanel::default().show(ctx, |ui| {
 
             if self.prep_panel.update(ui) {
-                self.dfa_constructor.run_dfa(MinkidSolver::new(self.prep_panel.rules.clone(),self.prep_panel.goal.clone()),self.prep_panel.sig_k);
+                self.dfa_constructor.run_dfa(MinkidSolver::new(Ruleset::from_string(&self.prep_panel.srs_text),self.prep_panel.goal.clone()),self.prep_panel.sig_k,self.prep_panel.verify_run);
                 Plot::new("my_plot").reset();
             }
             self.dfa_constructor.update(ui);
