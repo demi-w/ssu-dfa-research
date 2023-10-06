@@ -28,7 +28,7 @@ pub use web_time::Instant;
 #[cfg(not(target_arch = "wasm32"))]
 pub use std::time::Instant;
 
-pub trait Solver where Self : Sized + Clone  + Send + 'static {
+pub trait Solver where Self:Sized + Clone + Send + 'static{
     fn get_phases() -> Vec<String>;
 
     #[cfg(not(target_arch = "wasm32"))]
@@ -139,6 +139,29 @@ pub trait Solver where Self : Sized + Clone  + Send + 'static {
         }
         result
     }
+    //returns an annotated list of all possible moves from a string
+    //annotation is as follows: starting idx of rule application, len of lhs of rule used, len of rhs of rule used, resulting board.
+    fn single_rule_hash_annotated(&self, start_board : &Vec<SymbolIdx>) -> Vec<(usize,usize,usize,Vec<SymbolIdx>)> {
+        let mut result = vec![];
+        for lftmst_idx in 0..start_board.len() {
+            for slice_length in self.get_min_input()..core::cmp::min(self.get_max_input(),start_board.len()-lftmst_idx)+1 {
+                match self.get_ruleset().rules.get(&start_board[lftmst_idx..(lftmst_idx+slice_length)]) {
+                    Some(new_swaps) => {
+                        let new_board = start_board[0..lftmst_idx].to_vec();
+                        for new_swap in new_swaps {
+                            let mut newest_board = new_board.clone();
+                            newest_board.extend(new_swap);
+                            newest_board.extend(start_board[lftmst_idx+slice_length..start_board.len()].to_vec());
+                            result.push((lftmst_idx,slice_length,new_swap.len(),newest_board));
+                        }
+                    }
+                    None => {}
+                }
+            }
+        }
+        result
+    }
+
     fn sized_init(rules : &Ruleset) -> (usize, usize) {
         let mut min_input : usize = usize::MAX;
         let mut max_input : usize = 0;
@@ -153,7 +176,10 @@ pub trait Solver where Self : Sized + Clone  + Send + 'static {
         }
         (min_input, max_input)
     }
-    fn solve_string(&self, possible_dfa : &DFA, input_str : &Vec<SymbolIdx>) -> Vec<Vec<SymbolIdx>> {
+    fn solve_string(&self, possible_dfa : &DFA, input_str : &Vec<SymbolIdx>) -> Result<Vec<Vec<SymbolIdx>>,()> {
+        if !possible_dfa.contains(input_str) {
+            return Err(())
+        }
         let mut intrepid_str = input_str.clone();
         let mut visited = HashSet::new();
         let mut result = vec![intrepid_str.clone()];
@@ -168,8 +194,46 @@ pub trait Solver where Self : Sized + Clone  + Send + 'static {
                 }
             }
         }
-        //println!("{}",symbols_to_string(&intrepid_str));
-        result
+        Ok(result)
+    }
+
+    fn solve_string_annotated(&self, possible_dfa : &DFA, input_str : &Vec<SymbolIdx>) -> Result<Vec<(usize,usize,usize,Vec<SymbolIdx>)>,()> {
+        if !possible_dfa.contains(input_str) {
+            return Err(())
+        }
+        if self.get_goal().contains(input_str) {
+            return Ok(vec![])
+        }
+        let mut visited = HashMap::new();
+        
+
+        let mut old_options = vec![];
+        let mut new_options = vec![input_str.clone()];
+        visited.insert(input_str.clone(),(0,0,0,vec![]));
+        loop {
+            old_options.clear();
+            std::mem::swap(&mut old_options, &mut new_options);
+            for option_str in &old_options {
+                for option in self.single_rule_hash_annotated(option_str) {
+                    if self.get_goal().contains(&option.3) {
+                        let mut result = vec![option];
+                        let mut ancestor = option_str;
+                        while ancestor != input_str {
+                            let ancestor_info = visited.get(ancestor).unwrap();
+                            result.push((ancestor_info.0,ancestor_info.1,ancestor_info.2, ancestor.clone()));
+                            ancestor = &ancestor_info.3;
+                        }
+                        result.reverse();
+                        return Ok(result);
+                    } 
+                    if !visited.contains_key(&option.3) && possible_dfa.contains(&option.3) {
+                        //println!("{}",symbols_to_string(&intrepid_str));
+                        new_options.push(option.3.clone());
+                        visited.insert(option.3.clone(),(option.0,option.1,option.2,option_str.clone()));
+                    }
+                }
+            }
+        }
     }
 
     fn build_rule_graph(&self, possible_dfa : &DFA) -> DiGraph::<usize,RuleGraphRoot> {

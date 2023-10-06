@@ -156,7 +156,7 @@ impl Solver for MinkidSolver {
                     let mut lhs = vec![start_node];
                     let mut rhs = vec![start_node];
                     let mut p_rule_len = 1;
-                    while p_rule_len <= lhs_str.len() && p_rule_len <= rhs_str.len() {
+                    while p_rule_len <= lhs_str.len() || p_rule_len <= rhs_str.len() {
 
                         let mut potential_lhs_e = vec![];
 
@@ -255,7 +255,7 @@ impl Solver for MinkidSolver {
             phase_events.send(dur).unwrap();
             last_time = Instant::now();
         }
-        /*
+        /* 
         let mut debug_link_graph : DiGraph<String,(Vec<SymbolIdx>,Vec<SymbolIdx>)> = Graph::new();
         for i in 0..link_graph.node_count() {
             if i < *iteration_lens.last().unwrap() {
@@ -273,6 +273,29 @@ impl Solver for MinkidSolver {
         let mut file = std::fs::File::create(format!("link_graph_debug/{}.dot",iteration_lens.len()-2)).unwrap();
         file.write_fmt(format_args!("{:?}",petgraph::dot::Dot::new(&debug_link_graph))); */
         
+
+
+        /*
+            code to initially go through changes in reverse topological order.
+            maybe I'm stupid, but surprisingly, this is actually less efficient.
+            let mut tarjan = TarjanScc::new();
+
+            tarjan.run(&link_graph, |x| {
+                for prospective_node in x {
+                    if prospective_node.index() < *iteration_lens.last().unwrap() {
+                        continue;
+                    }
+                    for edge in link_graph.edges_directed(*prospective_node, Outgoing) {
+                        //If it modifies its source
+                        if self.partial_link(&mut dfa_graph, sig_set, edge.weight(), edge.source(), edge.target()) {
+                            affected_nodes.insert(*prospective_node);
+                        }
+                    }
+                    nodes_used += 1;
+                }
+            });
+        */
+
         //Alright, pretending/assuming that we've written that correctly, we move on to actually propagating ancestors!
         //this also sucks :(
         //Just to get the ball rolling, we run through everything new once
@@ -469,8 +492,8 @@ impl MinkidSolver {
         for edge in self.ss_link_graph.raw_edges() {
             ss_debug_graph.add_edge(edge.source(), edge.target(), ());
         }
-        let mut file = File::create("link_graph_debug/ss.dot").unwrap();
-        file.write_fmt(format_args!("{:?}",Dot::new(&ss_debug_graph)));*/
+        let mut file = std::fs::File::create("link_graph_debug/ss.dot").unwrap();
+        file.write_fmt(format_args!("{:?}",petgraph::dot::Dot::new(&ss_debug_graph)));*/
         /* 
         for i in self.ss_link_graph.node_indices() {
             //Calculating all ancestors
@@ -575,7 +598,12 @@ impl MinkidSolver {
                     if sig_set[*ss_idx].len() >= connection.1.len() && sig_set[*ss_idx][0..connection.1.len()] == connection.1 {
                         //Build what the new element would look like
                         let mut new_ss = connection.0.clone();
-                        new_ss.extend(&sig_set[*ss_idx][connection.0.len()..]);
+                        new_ss.extend(&sig_set[*ss_idx][connection.1.len()..]);
+                        let ss_idx = self.rules.symbol_set.find_in_sig_set(new_ss.iter());
+                        //If new_ss.len() > k
+                        if ss_idx >= sig_set.len() {
+                            continue
+                        }
 
                         //Find its index, translate it to a node, and add that node to our list of intermediary minkids
                         intermediary_minkids.insert(self.ss_idx_to_link[self.rules.symbol_set.find_in_sig_set(new_ss.iter())]);
