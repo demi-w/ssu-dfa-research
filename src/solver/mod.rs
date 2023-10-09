@@ -1,5 +1,5 @@
 
-use std::{sync::mpsc::{Sender, Receiver, channel}, collections::{HashMap, HashSet}, io::{self, Write}, fmt::Display};
+use std::{sync::mpsc::{Sender, Receiver, channel}, collections::{HashMap, HashSet}, io::{self, Write}, fmt::Display, error::Error};
 
 use std::thread;
 
@@ -97,7 +97,7 @@ pub trait Solver where Self:Sized + Clone + Send + 'static{
         run_handle.join().unwrap()
     }
 
-    fn new(ruleset : Ruleset, goal : DFA) -> Self;
+    fn new(ruleset : Ruleset, goal : DFA) -> Result<Self,DomainError>;
 
     fn ensure_expansion(ruleset : &mut Ruleset, goal : &mut DFA){
         if ruleset.symbol_set == goal.symbol_set {return;} 
@@ -446,3 +446,22 @@ fn random_tests(&mut self,test_dfa : DFA, n:usize, total_boards:usize){
 
 }
  */
+
+ #[derive(Debug)]
+pub enum DomainError {
+    Generating((Vec<SymbolIdx>,Vec<SymbolIdx>)),
+    Deleting((Vec<SymbolIdx>,Vec<SymbolIdx>)),
+    Cyclic((Vec<SymbolIdx>,Vec<SymbolIdx>))
+}
+
+impl DomainError {
+    pub fn to_string(&self, symset : &SymbolSet) -> String {
+        let mut result = "Solver is incompatible with ".to_owned();
+        match &self {
+            DomainError::Generating((lhs,rhs)) => result.push_str(&format!("generating rules. SRS contains generating rule \"{} - {}\"",symset.symbols_to_string(&lhs),symset.symbols_to_string(&rhs))),
+            DomainError::Deleting((lhs,rhs)) => result.push_str(&format!("deleting rules. SRS contains deleting rule \"{} - {}\".",symset.symbols_to_string(&lhs),symset.symbols_to_string(&rhs))),
+            DomainError::Cyclic((lhs,rhs)) => result.push_str(&format!("cyclic rules. Rules \"{0} - {1}\" and \"{1} - {0}\" create a cycle.",symset.symbols_to_string(&lhs),symset.symbols_to_string(&rhs)))
+        }
+        result
+    }
+}

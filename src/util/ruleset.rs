@@ -131,4 +131,40 @@ impl Ruleset {
         }
         result
     }
+    pub fn is_generating(&self) -> bool {
+        for rule in &self.rules {
+            //Map each element to its string rep then join all string reps together by a space.
+            let lhs_len = rule.0.len();
+            for rhs_vec in rule.1 {
+                if rhs_vec.len() > lhs_len {
+                    return true;
+                }
+            }
+        }
+        false
+    }
+    pub fn is_deleting(&self) -> bool {
+        for rule in &self.rules {
+            //Map each element to its string rep then join all string reps together by a space.
+            let lhs_len = rule.0.len();
+            for rhs_vec in rule.1 {
+                if rhs_vec.len() < lhs_len {
+                    return true;
+                }
+            }
+        }
+        false
+    }
+    pub fn is_length_preserving(&self) -> bool {
+        for rule in &self.rules {
+            //Map each element to its string rep then join all string reps together by a space.
+            let lhs_len = rule.0.len();
+            for rhs_vec in rule.1 {
+                if rhs_vec.len() != lhs_len {
+                    return true;
+                }
+            }
+        }
+        false
+    }
 }

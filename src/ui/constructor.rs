@@ -163,7 +163,7 @@ impl DFAConstructor{
             if ui.button("Solve String").clicked() {
                 match dfa.symbol_set.string_to_symbols(&self.solve_string.to_string().split(" ").collect()) {
                     Ok(input_str) => {
-                        self.solve_path = Some(MinkidSolver::new(solver.rules.clone(),solver.goal.clone()).solve_string_annotated(dfa, &input_str));
+                        self.solve_path = Some(MinkidSolver::new(solver.rules.clone(),solver.goal.clone()).unwrap().solve_string_annotated(dfa, &input_str));
                         self.last_solve_string = Some(input_str);
                     }
                     Err(idx) => {
@@ -222,6 +222,34 @@ impl DFAConstructor{
     }
     pub fn run_dfa(&mut self, solver : AvailableSolver, rules : Ruleset, goal : DFA, k : usize, verify_run : bool){
         
+        match solver {
+            AvailableSolver::Minkid => {
+                match MinkidSolver::new(rules.clone(),goal.clone()) {
+                    Ok(solver) => {self.run_dfa_arch(solver, k);}
+                    Err(d_error) => {
+                        let _ = self.e_reporter.send(Error { 
+                                title: "Incompatible Solver".to_owned(), 
+                                body: RichText::new(d_error.to_string(&rules.symbol_set))
+                        });
+                        return;
+                    }
+                }
+                
+            }
+            AvailableSolver::Subset => {
+                match SubsetSolver::new(rules.clone(),goal.clone()) {
+                Ok(solver) => {self.run_dfa_arch(solver, k);}
+                Err(d_error) => {
+                    let _ = self.e_reporter.send(Error { 
+                            title: "Incompatible Solver".to_owned(), 
+                            body: RichText::new(d_error.to_string(&rules.symbol_set))
+                    });
+                    return;    
+                }
+            }
+            }
+        };
+
         self.verify_run = verify_run;
         self.final_dfa = None;
         
@@ -234,14 +262,7 @@ impl DFAConstructor{
         self.has_started = true;
         self.last_solver = Some(SolverContents { rules: rules.clone(), goal: goal.clone(), solve_type : solver });
         self.last_phase_msg = Instant::now();
-        match solver {
-            AvailableSolver::Minkid => {
-                self.run_dfa_arch(MinkidSolver::new(rules,goal), k);
-            }
-            AvailableSolver::Subset => {
-                self.run_dfa_arch(SubsetSolver::new(rules,goal), k);
-            }
-        }
+
         
     }
 

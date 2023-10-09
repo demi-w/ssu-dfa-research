@@ -4,12 +4,13 @@ use std::thread;
 use std::time::Duration;
 
 use async_trait::async_trait;
+use bitvec::domain::Domain;
 use crossbeam::queue::SegQueue;
 
 use crate::util::{Ruleset, DFA, SymbolIdx};
 use crate::solver::Solver;
 
-use super::{DFAStructure, SSStructure, Instant};
+use super::{DFAStructure, SSStructure, Instant, DomainError};
 
 use bitvec::prelude::*;
 
@@ -44,16 +45,16 @@ impl Solver for BFSSolver {
         &self.rules
     }
 
-    fn new(mut ruleset:Ruleset, mut goal :DFA) -> Self {
+    fn new(mut ruleset:Ruleset, mut goal :DFA) -> Result<Self,DomainError> {
         Self::ensure_expansion(&mut ruleset,&mut goal);
         let (min_input, max_input) = BFSSolver::sized_init(&ruleset);
-        BFSSolver { 
+        Ok(BFSSolver { 
             rules: ruleset,
             goal : goal,
             worker_threads : 32,
             min_input : min_input,
             max_input : max_input    
-        }
+        })
     }
     fn run_internal(self, 
         sig_k : usize, 

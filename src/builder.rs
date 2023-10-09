@@ -25,6 +25,20 @@ pub fn build_all0() -> DFA {
     }
 }
 
+pub fn build_all000() -> DFA {
+    //Written so that it can expand to work with any other symbol set as expected
+    let b_symbol_set = SymbolSet {
+        length : 1,
+        representations : vec!["000".to_owned()]
+    };
+    DFA {
+        starting_state : 0,
+        state_transitions : vec![vec![0]],
+        accepting_states : HashSet::from_iter(vec![0]),
+        symbol_set : b_symbol_set.clone()
+    }
+}
+
 pub fn build_onlyone1() -> DFA {
     let b_symbol_set = SymbolSet {
         length : 2,
@@ -273,7 +287,7 @@ pub fn build_flipx3_rs() -> Ruleset {
     Ruleset::from_vec(new_rules,by_k_symbol_set.clone())
 }
 
-fn build_default2dpegx3_rs() -> Ruleset {
+pub fn build_default2dpegx3_rs() -> Ruleset {
     let b_symbol_set = SymbolSet {
         length : 2,
         representations : vec!["0".to_owned(),"1".to_owned()]
@@ -359,17 +373,17 @@ fn build_default2dpegx3_rs() -> Ruleset {
     Ruleset::from_vec(new_rules,by_k_symbol_set.clone())
 }
 
-pub fn build_threerulesolver<S>() -> S where S: Solver {
+pub fn build_threerulesolver<S>() -> Result<S, crate::solver::DomainError> where S: Solver {
     S::new(build_threerulesolver_rs(),build_onlyone2())
 }
 
-pub fn build_defaultsolver<S>() -> S where S: Solver {
+pub fn build_defaultsolver<S>() -> Result<S, crate::solver::DomainError> where S: Solver {
     S::new(build_defaultsolver_rs(),build_onlyone2())
 }
 
 
 
-pub fn build_2xnswap<S>() -> S where S: Solver {
+pub fn build_2xnswap<S>() -> Result<S, crate::solver::DomainError> where S: Solver {
     let symbol_set = SymbolSet {
         length : 3,
         representations : vec!["0".to_owned(),"1".to_owned(),"2".to_owned()]
@@ -394,22 +408,22 @@ pub fn build_2xnswap<S>() -> S where S: Solver {
      S::new(ruleset,goal_dfa)
 }
 
-pub fn build_default1dpeg<S>() -> S where S: Solver {
+pub fn build_default1dpeg<S>() -> Result<S, crate::solver::DomainError> where S: Solver {
     S::new(build_1dpeg_rs(),build_onlyone1())
 }
 
-pub fn build_threerule1dpeg<S>() -> S where S: Solver {
+pub fn build_threerule1dpeg<S>() -> Result<S, crate::solver::DomainError> where S: Solver {
     S::new(build_threerule1dpeg_rs(),build_onlyone1())
 }
 
-pub fn build_flip<S>() -> S where S: Solver {
+pub fn build_flip<S>() -> Result<S, crate::solver::DomainError> where S: Solver {
     S::new(build_flip_rs(),build_all0())
 }
 
-pub fn build_flipx3<S>() -> S where S: Solver {
+pub fn build_flipx3<S>() -> Result<S, crate::solver::DomainError> where S: Solver {
     S::new(build_flipx3_rs(),build_all0())
 }
 
-pub fn build_default2dpegx3<S>() -> S where S: Solver {
+pub fn build_default2dpegx3<S>() -> Result<S, crate::solver::DomainError> where S: Solver {
     S::new(build_default2dpegx3_rs(),build_2dpeg_goal())
 }

@@ -5,7 +5,7 @@ use petgraph::{graph::{DiGraph,NodeIndex}, algo::{condensation, toposort}, Graph
 
 use crate::util::{Ruleset, DFA, SymbolIdx};
 
-use super::{Solver, DFAStructure, SSStructure, Instant};
+use super::{Solver, DFAStructure, SSStructure, Instant, DomainError};
 
 #[derive(Debug,Clone, Default)]
 struct SignatureSetElement {
@@ -61,10 +61,10 @@ impl Solver for MinkidSolver {
         vec!["Build rule graph".to_owned(),"Propagate pure links".to_owned(), "Propagate minkids".to_owned(), "Remove duplicates".to_owned()]
     }
 
-    fn new(mut ruleset : Ruleset, mut goal : DFA) -> Self {
+    fn new(mut ruleset : Ruleset, mut goal : DFA) -> Result<Self,DomainError> {
         Self::ensure_expansion(&mut ruleset,&mut goal);
         let (min_input, max_input) = MinkidSolver::sized_init(&ruleset);
-        MinkidSolver { goal: goal, rules: ruleset, max_input: max_input, min_input: min_input, goal_minkids: vec![], ss_link_graph: Graph::new(), ss_idx_to_link: vec![] }
+        Ok(MinkidSolver { goal: goal, rules: ruleset, max_input: max_input, min_input: min_input, goal_minkids: vec![], ss_link_graph: Graph::new(), ss_idx_to_link: vec![] } )
     }
 
     fn get_ruleset(&self) -> &Ruleset{

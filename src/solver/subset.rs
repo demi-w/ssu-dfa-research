@@ -5,7 +5,7 @@ use petgraph::{prelude::DiGraph, graph::NodeIndex, Direction, algo::toposort};
 
 use crate::{util::{DFA, Ruleset, SymbolIdx}, solver::{DFAStructure, SSStructure}};
 
-use super::{Solver, Instant};
+use super::{Solver, Instant, DomainError};
 
 
 
@@ -34,10 +34,23 @@ impl Solver for SubsetSolver {
         &self.goal
     }
 
-    fn new(mut ruleset : Ruleset, mut goal : DFA) -> Self {
+    fn new(mut ruleset : Ruleset, mut goal : DFA) -> Result<Self,DomainError> {
+        if let Some((lhs,rhs)) = ruleset.has_non_length_preserving_rule() {
+            if lhs.len() < rhs.len() {
+                return Err(DomainError::Generating((lhs,rhs)));
+            } else {
+                return Err(DomainError::Deleting((lhs,rhs)));
+            }
+        }
+
+        if let Some(problem) = ruleset.has_definitely_cyclic_rule() {
+            return Err(DomainError::Cyclic(problem));
+        }
         Self::ensure_expansion(&mut ruleset,&mut goal);
+
+
         let (min_input, max_input) = SubsetSolver::sized_init(&ruleset);
-        SubsetSolver { goal: goal, rules: ruleset, sig_sets : vec![], solved_yet : vec![] , trans_table : vec![], min_input : min_input, max_input : max_input, unique_sigs : HashMap::new() }
+        Ok(SubsetSolver { goal: goal, rules: ruleset, sig_sets : vec![], solved_yet : vec![] , trans_table : vec![], min_input : min_input, max_input : max_input, unique_sigs : HashMap::new() })
     }
     fn get_phases() -> Vec<String> {
         vec!["Rule graph generation".to_owned(), "Sig set generation".to_owned(),"Uniqueness checks".to_owned(), "Clean up".to_owned()]

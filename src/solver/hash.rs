@@ -2,7 +2,7 @@ use std::collections::{HashSet, HashMap};
 
 use crate::{util::{Ruleset, DFA, SymbolIdx}, solver::{DFAStructure, SSStructure}};
 
-use super::{Solver, Instant};
+use super::{Solver, Instant, DomainError};
 
 use bitvec::prelude::*;
 
@@ -30,10 +30,10 @@ impl Solver for HashSolver {
         &self.goal
     }
 
-    fn new(mut ruleset : Ruleset, mut goal : DFA) -> Self {
+    fn new(mut ruleset : Ruleset, mut goal : DFA) -> Result<Self,DomainError> {
         Self::ensure_expansion(&mut ruleset,&mut goal);
         let (min_input, max_input) = HashSolver::sized_init(&ruleset);
-        HashSolver { min_input : min_input, max_input : max_input, goal: goal, rules: ruleset, board_solutions : HashMap::new() }
+        Ok(HashSolver { min_input : min_input, max_input : max_input, goal: goal, rules: ruleset, board_solutions : HashMap::new() })
     }
     fn get_phases() -> Vec<String> {
         vec!["Entire Iteration".to_owned()]
