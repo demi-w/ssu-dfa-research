@@ -31,7 +31,7 @@ impl Solver for HashSolver {
     }
 
     fn new(mut ruleset : Ruleset, mut goal : DFA) -> Self {
-        Self::ensure_expansion(&mut ruleset,&mut goal).unwrap();
+        Self::ensure_expansion(&mut ruleset,&mut goal);
         let (min_input, max_input) = HashSolver::sized_init(&ruleset);
         HashSolver { min_input : min_input, max_input : max_input, goal: goal, rules: ruleset, board_solutions : HashMap::new() }
     }

@@ -35,7 +35,7 @@ impl Solver for SubsetSolver {
     }
 
     fn new(mut ruleset : Ruleset, mut goal : DFA) -> Self {
-        Self::ensure_expansion(&mut ruleset,&mut goal).unwrap();
+        Self::ensure_expansion(&mut ruleset,&mut goal);
         let (min_input, max_input) = SubsetSolver::sized_init(&ruleset);
         SubsetSolver { goal: goal, rules: ruleset, sig_sets : vec![], solved_yet : vec![] , trans_table : vec![], min_input : min_input, max_input : max_input, unique_sigs : HashMap::new() }
     }
@@ -111,6 +111,7 @@ impl Solver for SubsetSolver {
         for index in 0..(last_known + new_states) {
             link_graph.add_node(index);
         }
+        let mut old_len = link_graph.edge_count();
         for origin in 0..last_known {
             for rule_list in &self.rules.rules {
                 let lhs = rule_list.0;
@@ -133,7 +134,7 @@ impl Solver for SubsetSolver {
             }  
         }
         // After establishing the starting points of all links, extend those links outward.
-        let mut old_len = 0;
+        
         while old_len < link_graph.edge_count() {
             let new_len = link_graph.edge_count();
             for edge_idx in old_len..new_len {

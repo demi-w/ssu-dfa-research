@@ -40,7 +40,7 @@ pub enum SSStructure {
 }
 
 impl SSStructure {
-    fn accepting_states(&self, rules : &Ruleset) -> HashSet<usize> {
+    pub fn accepting_states(&self, rules : &Ruleset) -> HashSet<usize> {
         let mut result = HashSet::new();
         match self {
             Self::Boolean(vec) => {
@@ -59,6 +59,18 @@ impl SSStructure {
             }
         }
         result
+    }
+    pub fn element_len(&self) -> usize {
+        match self {
+            Self::Boolean(vec) => {vec[0].len()},
+            Self::BooleanMap(map) => {map.iter().next().unwrap().0.len()}
+        }
+    }
+    pub fn len(&self) -> usize {
+        match self {
+            Self::Boolean(vec) => {vec.len()},
+            Self::BooleanMap(map) => {map.len()}
+        }
     }
 }
 

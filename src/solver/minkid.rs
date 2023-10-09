@@ -62,7 +62,7 @@ impl Solver for MinkidSolver {
     }
 
     fn new(mut ruleset : Ruleset, mut goal : DFA) -> Self {
-        Self::ensure_expansion(&mut ruleset,&mut goal).unwrap();
+        Self::ensure_expansion(&mut ruleset,&mut goal);
         let (min_input, max_input) = MinkidSolver::sized_init(&ruleset);
         MinkidSolver { goal: goal, rules: ruleset, max_input: max_input, min_input: min_input, goal_minkids: vec![], ss_link_graph: Graph::new(), ss_idx_to_link: vec![] }
     }
@@ -149,7 +149,6 @@ impl Solver for MinkidSolver {
         for start_idx in iteration_lens[underflow_dodge]..iteration_lens[iteration_lens.len() - 1] {
             //Root node that prospective state will be connected to
             let start_node = NodeIndex::new(start_idx);
-            //ONLY WORKS FOR RULES OF EQUAL LENGTH -- HONESTLY, THINKING ABOUT DELETING/GENERATING RULES MAKES MY HEAD HURT
             for rule_list in &self.rules.rules {
                 let lhs_str = rule_list.0;
                 for rhs_str in rule_list.1 {
@@ -277,7 +276,8 @@ impl Solver for MinkidSolver {
 
         /*
             code to initially go through changes in reverse topological order.
-            maybe I'm stupid, but surprisingly, this is actually less efficient.
+            This is tragically less efficient because in most examples, every single prospective element
+            is grouped into one big strongly connected component, making topological order useless.
             let mut tarjan = TarjanScc::new();
 
             tarjan.run(&link_graph, |x| {
@@ -493,7 +493,7 @@ impl MinkidSolver {
             ss_debug_graph.add_edge(edge.source(), edge.target(), ());
         }
         let mut file = std::fs::File::create("link_graph_debug/ss.dot").unwrap();
-        file.write_fmt(format_args!("{:?}",petgraph::dot::Dot::new(&ss_debug_graph)));*/
+        file.write_fmt(format_args!("{:?}",petgraph::dot::Dot::new(&ss_debug_graph))); */
         /* 
         for i in self.ss_link_graph.node_indices() {
             //Calculating all ancestors
