@@ -2,7 +2,7 @@ use std::{path::PathBuf, fmt::format, sync::mpsc::Sender};
 
 use egui::{Ui, RichText};
 
-use crate::{util::{DFA, Ruleset}, builder::{build_1dpeg_rs, build_onlyone1, build_all0, build_onlyone2, build_1dpeg_result, build_flip_rs, build_flipx3_rs, build_threerule1dpeg_rs, build_defaultsolver_rs, build_threerulesolver_rs, build_2xnswap_rs}, solver::Solver};
+use crate::{util::{DFA, Ruleset}, builder::{build_1dpeg_rs, build_onlyone1, build_all0, build_onlyone2, build_1dpeg_result, build_flip_rs, build_flipx3_rs, build_threerule1dpeg_rs, build_defaultsolver_rs, build_threerulesolver_rs, build_2xnswap_rs, build_2dpeg_goal, build_all000, build_default2dpegx3, build_default2dpegx3_rs}, solver::Solver};
 
 use super::{open_file, OpenItem, PathSender, PathReciever, constructor, DFAConstructor, AvailableSolver, Error};
 
@@ -29,6 +29,7 @@ enum ExampleRulesets {
     TwoxNSwap,
     Flip,
     ThreexNFlip,
+    ThreexNPeg,
     Custom(String)
 }
 #[derive(PartialEq,Clone)]
@@ -37,6 +38,8 @@ enum ExampleGoals {
     OnlyOne1,
     OnlyOne2,
     OneDPegResult,
+    All000,
+    OneDPegResultxThree,
     Custom(String)
 }
 
@@ -49,6 +52,8 @@ impl ExampleGoals {
             Self::OnlyOne1 => build_onlyone1(),
             Self::OnlyOne2 => build_onlyone2(),
             Self::OneDPegResult => build_1dpeg_result(),
+            Self::OneDPegResultxThree => build_2dpeg_goal(),
+            Self::All000 => build_all000(),
             Self::Custom(_) => build_onlyone1()
         }
     }
@@ -58,9 +63,11 @@ impl std::fmt::Display for ExampleGoals {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         let val = match self {
             Self::All0 => "All0.dfa",
+            Self::All000 => "All000.dfa",
             Self::OnlyOne1 => "OnlyOne1.dfa",
             Self::OnlyOne2 => "OnlyOne2.dfa",
             Self::OneDPegResult => "1dPegResult.dfa",
+            Self::OneDPegResultxThree => "1dPegResultx3.dfa",
             Self::Custom(str) => str
         };
         write!(f,"{}",val)
@@ -76,6 +83,7 @@ impl std::fmt::Display for ExampleRulesets {
             Self::ThreeRuleOneDPeg => "1D Peg Three Rule Variant",
             Self::ThreeRuleSolver => "1D Peg Three Rule 'Solver'",
             Self::ThreexNFlip => "3xN Flip",
+            Self::ThreexNPeg => "3xN Peg Solitaire",
             Self::TwoxNSwap => "2xN 'Swap' Peg Solitaire",
             Self::Custom(str) => str
         };
@@ -93,6 +101,7 @@ impl ExampleRulesets {
             Self::ThreeRuleOneDPeg => build_threerule1dpeg_rs(),
             Self::DefaultSolver => build_defaultsolver_rs(),
             Self::ThreeRuleSolver => build_threerulesolver_rs(),
+            Self::ThreexNPeg => build_default2dpegx3_rs(),
             Self::TwoxNSwap => build_2xnswap_rs(),
             Self::Custom(_) => build_1dpeg_rs()
         }
@@ -140,7 +149,8 @@ impl PrepPanel {
                                 ExampleRulesets::ThreeRuleSolver,
                                 ExampleRulesets::Flip,
                                 ExampleRulesets::ThreexNFlip,
-                                ExampleRulesets::TwoxNSwap] {
+                                ExampleRulesets::TwoxNSwap,
+                                ExampleRulesets::ThreexNPeg] {
                 if ui.button(i.to_string()).clicked() {
                     self.ruleset_pick = i;
                     self.srs_text = self.ruleset_pick.to_srs().to_string();
@@ -185,7 +195,7 @@ impl PrepPanel {
                 open_file(OpenItem::Goal, self.path_s.clone());
             }
             ui.menu_button("Load example goal", |ui| {
-                for i in vec![ExampleGoals::All0, ExampleGoals::OnlyOne1, ExampleGoals::OnlyOne2] {
+                for i in vec![ExampleGoals::All0, ExampleGoals::OnlyOne1, ExampleGoals::OnlyOne2, ExampleGoals::All000,ExampleGoals::OneDPegResultxThree] {
                     if ui.button(i.to_string()).clicked() {
                         self.goal_pick = i;
                         self.goal = self.goal_pick.to_dfa();
