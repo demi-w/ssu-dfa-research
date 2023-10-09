@@ -34,7 +34,7 @@ fn subset_solver() {
 
 #[ignore = "expensive"]
 #[test]
-fn complet_minkid_solver() {
+fn complete_minkid_solver() {
     test_standard_examples::<MinkidSolver>();
     test_cyclic_examples::<MinkidSolver>();
     test_intensive_examples::<MinkidSolver>();

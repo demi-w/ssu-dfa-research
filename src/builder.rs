@@ -421,7 +421,7 @@ pub fn build_flip<S>() -> Result<S, crate::solver::DomainError> where S: Solver 
 }
 
 pub fn build_flipx3<S>() -> Result<S, crate::solver::DomainError> where S: Solver {
-    S::new(build_flipx3_rs(),build_all0())
+    S::new(build_flipx3_rs(),build_all000())
 }
 
 pub fn build_default2dpegx3<S>() -> Result<S, crate::solver::DomainError> where S: Solver {
