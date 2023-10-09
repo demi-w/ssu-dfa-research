@@ -14,7 +14,6 @@ use gloo_file::ObjectUrl;
 
 
 
-use srs_to_dfa::solver::{BFSSolver, MinkidSolver, Solver, DFAStructure, SSStructure};
 use srs_to_dfa::util::*;
 use srs_to_dfa::builder::build_default1dpeg;
 use srs_to_dfa::wbf_fix;
@@ -67,19 +66,22 @@ fn main() {
 
 
 struct MyApp {
-    dfa_constructor : DFAConstructor<MinkidSolver>,
+    dfa_constructor : DFAConstructor,
     prep_panel : PrepPanel,
     c_visualizer : CVisualizer,
-    blob_link : String
+    e_reporter : ErrorReporter,
+    open_generator_window : bool,
 }
 
 impl Default for MyApp {
     fn default() -> Self {
+        let error_channel = std::sync::mpsc::channel();
         Self {
             c_visualizer : CVisualizer::default(),
-            blob_link : "".to_owned(),
-            dfa_constructor : DFAConstructor::default(),
-            prep_panel : PrepPanel::default()
+            dfa_constructor : DFAConstructor::new(error_channel.0.clone()),
+            prep_panel : PrepPanel::new(error_channel.0.clone()),
+            e_reporter : ErrorReporter::new(error_channel.1),
+            open_generator_window : false
         }
     }
 }
@@ -89,16 +91,39 @@ impl eframe::App for MyApp {
 
     fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
         ctx.request_repaint();
+        self.e_reporter.update(ctx);
+
+        egui::TopBottomPanel::top("my_panel").show(ctx, |ui| {
+            ui.add_enabled_ui(!self.e_reporter.error_onscreen, |ui|{
+            ui.horizontal(|ui|{
+                self.prep_panel.topbar_update(ui);
+                if ui.button("Generate DFA").clicked() {
+                    self.open_generator_window = !self.open_generator_window;
+                }
+                
+            });});
+         });
 
         egui::CentralPanel::default().show(ctx, |ui| {
-
-            if self.prep_panel.update(ui) {
-                self.dfa_constructor.run_dfa(MinkidSolver::new(Ruleset::from_string(&self.prep_panel.srs_text),self.prep_panel.goal.clone()),self.prep_panel.sig_k,self.prep_panel.verify_run);
+            ui.add_enabled_ui(!self.e_reporter.error_onscreen, |ui|{
+            self.prep_panel.update(ui);
+            self.dfa_constructor.update(ui,&mut self.prep_panel);
+            });
+        });
+        egui::Window::new("DFA Generator").collapsible(false).open(&mut self.open_generator_window).show(ctx, |ui| {
+            ui.add_enabled_ui(!self.e_reporter.error_onscreen, |ui|{
+            self.c_visualizer.update(ui, &self.dfa_constructor, &self.prep_panel);
+            ui.add_enabled_ui((!self.dfa_constructor.has_started && !self.dfa_constructor.has_finished) || self.dfa_constructor.has_finished, |ui|{
+            ui.horizontal_wrapped(|ui|{
+            if self.prep_panel.solve_window_update(ui, &self.dfa_constructor) { 
+                self.dfa_constructor.run_dfa(self.prep_panel.solver_type,Ruleset::from_string(&self.prep_panel.srs_text),self.prep_panel.goal.clone(),self.prep_panel.sig_k,self.prep_panel.verify_run);
                 Plot::new("my_plot").reset();
             }
-            self.dfa_constructor.update(ui);
+            });
+            self.dfa_constructor.update_solve_window(ui);
+            });});
         });
-        self.c_visualizer.update(ctx, &self.dfa_constructor);
+        
 
 
 
