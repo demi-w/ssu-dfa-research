@@ -7,7 +7,8 @@ pub struct SymbolSet {
     pub representations : Vec<String>
 }
 impl SymbolSet {
-    pub fn new(representations : Vec<String>) -> SymbolSet{
+    pub fn new(mut representations : Vec<String>) -> SymbolSet{
+        representations.sort();
         SymbolSet { length: representations.len(), representations: representations }
     }
 
