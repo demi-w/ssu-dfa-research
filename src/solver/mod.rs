@@ -103,9 +103,14 @@ pub trait Solver where Self:Sized + Clone + Send + 'static{
         if ruleset.symbol_set == goal.symbol_set {return;} 
         if ruleset.symbol_set.is_subset(&goal.symbol_set) {
             ruleset.expand_to_symset(goal.symbol_set.clone());
-        }
-        if goal.symbol_set.is_subset(&ruleset.symbol_set) {
+        }else if goal.symbol_set.is_subset(&ruleset.symbol_set) {
             goal.expand_to_symset(ruleset.symbol_set.clone());
+        } else {
+            let mut merge_symbols = goal.symbol_set.representations.clone();
+            merge_symbols.append(&mut ruleset.symbol_set.representations.clone());
+            let merge_symset = SymbolSet::new(merge_symbols);
+            ruleset.expand_to_symset(merge_symset.clone());
+            goal.expand_to_symset(merge_symset);
         }
     }
 
