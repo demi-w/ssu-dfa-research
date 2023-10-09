@@ -30,7 +30,7 @@ impl ErrorReporter {
         if !self.error_queue.is_empty() {
             let mut window_open = true;
             let mut button_clicked = false;
-            egui::Window::new(format!("Error - {}",self.error_queue[0].title)).open(&mut window_open).movable(false).collapsible(false).resizable(false).show(ctx, |ui| {
+            egui::Window::new(format!("Error - {}",self.error_queue[0].title)).anchor(egui::Align2::CENTER_CENTER, (0.0,0.0)).pivot(egui::Align2::CENTER_CENTER).open(&mut window_open).movable(false).collapsible(false).resizable(false).show(ctx, |ui| {
                 ui.vertical_centered(|ui|{
                     ui.label(self.error_queue[0].body.clone());
                     button_clicked = ui.button("Okay").clicked();
@@ -38,7 +38,7 @@ impl ErrorReporter {
             });
             if button_clicked || !window_open {
                 self.error_queue.pop_front();
-            }
+            } 
         }
         self.error_onscreen = !self.error_queue.is_empty();
     }
