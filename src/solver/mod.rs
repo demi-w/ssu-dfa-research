@@ -99,16 +99,13 @@ pub trait Solver where Self:Sized + Clone + Send + 'static{
 
     fn new(ruleset : Ruleset, goal : DFA) -> Self;
 
-    fn ensure_expansion(ruleset : &mut Ruleset, goal : &mut DFA) -> Result<(),()>{
-        if ruleset.symbol_set == goal.symbol_set {Ok(())} 
-        else if ruleset.symbol_set.is_subset(&goal.symbol_set) {
+    fn ensure_expansion(ruleset : &mut Ruleset, goal : &mut DFA){
+        if ruleset.symbol_set == goal.symbol_set {return;} 
+        if ruleset.symbol_set.is_subset(&goal.symbol_set) {
             ruleset.expand_to_symset(goal.symbol_set.clone());
-            Ok(())
-        } else if goal.symbol_set.is_subset(&ruleset.symbol_set) {
+        }
+        if goal.symbol_set.is_subset(&ruleset.symbol_set) {
             goal.expand_to_symset(ruleset.symbol_set.clone());
-            Ok(())
-        } else {
-            Err(())
         }
     }
 
@@ -120,20 +117,27 @@ pub trait Solver where Self:Sized + Clone + Send + 'static{
     fn get_max_input(&self) -> usize;
     fn single_rule_hash(&self, start_board : &Vec<SymbolIdx>) -> Vec<Vec<SymbolIdx>> {
         let mut result = vec![];
+        if start_board.is_empty() {
+            if let Some(new_swaps) = self.get_ruleset().rules.get(&start_board[..]) {
+                for new_swap in new_swaps {
+                    result.push(new_swap.clone());
+                }
+            }
+            return result;
+        }
+        
+        
         for lftmst_idx in 0..start_board.len() {
             for slice_length in self.get_min_input()..core::cmp::min(self.get_max_input(),start_board.len()-lftmst_idx)+1 {
-                match self.get_ruleset().rules.get(&start_board[lftmst_idx..(lftmst_idx+slice_length)]) {
-                    Some(new_swaps) => {
-                        let new_board = start_board[0..lftmst_idx].to_vec();
+                if let Some(new_swaps) = self.get_ruleset().rules.get(&start_board[lftmst_idx..(lftmst_idx+slice_length)]) {
+                    let new_board = start_board[0..lftmst_idx].to_vec();
 
-                        for new_swap in new_swaps {
-                            let mut newest_board = new_board.clone();
-                            newest_board.extend(new_swap);
-                            newest_board.extend(start_board[lftmst_idx+slice_length..start_board.len()].to_vec());
-                            result.push(newest_board);
-                        }
+                    for new_swap in new_swaps {
+                        let mut newest_board = new_board.clone();
+                        newest_board.extend(new_swap);
+                        newest_board.extend(start_board[lftmst_idx+slice_length..start_board.len()].to_vec());
+                        result.push(newest_board);
                     }
-                    None => {}
                 }
             }
         }
@@ -143,19 +147,24 @@ pub trait Solver where Self:Sized + Clone + Send + 'static{
     //annotation is as follows: starting idx of rule application, len of lhs of rule used, len of rhs of rule used, resulting board.
     fn single_rule_hash_annotated(&self, start_board : &Vec<SymbolIdx>) -> Vec<(usize,usize,usize,Vec<SymbolIdx>)> {
         let mut result = vec![];
+        if start_board.is_empty() {
+            if let Some(new_swaps) = self.get_ruleset().rules.get(&start_board[..]) {
+                for new_swap in new_swaps {
+                    result.push((0,0,new_swap.len(),new_swap.clone()));
+                }
+            }
+            return result;
+        }
         for lftmst_idx in 0..start_board.len() {
             for slice_length in self.get_min_input()..core::cmp::min(self.get_max_input(),start_board.len()-lftmst_idx)+1 {
-                match self.get_ruleset().rules.get(&start_board[lftmst_idx..(lftmst_idx+slice_length)]) {
-                    Some(new_swaps) => {
-                        let new_board = start_board[0..lftmst_idx].to_vec();
-                        for new_swap in new_swaps {
-                            let mut newest_board = new_board.clone();
-                            newest_board.extend(new_swap);
-                            newest_board.extend(start_board[lftmst_idx+slice_length..start_board.len()].to_vec());
-                            result.push((lftmst_idx,slice_length,new_swap.len(),newest_board));
-                        }
+            if let Some(new_swaps) = self.get_ruleset().rules.get(&start_board[lftmst_idx..(lftmst_idx+slice_length)]) {
+                    let new_board = start_board[0..lftmst_idx].to_vec();
+                    for new_swap in new_swaps {
+                        let mut newest_board = new_board.clone();
+                        newest_board.extend(new_swap);
+                        newest_board.extend(start_board[lftmst_idx+slice_length..start_board.len()].to_vec());
+                        result.push((lftmst_idx,slice_length,new_swap.len(),newest_board));
                     }
-                    None => {}
                 }
             }
         }
