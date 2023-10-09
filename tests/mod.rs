@@ -53,15 +53,15 @@ fn complete_subset_solver() {
 fn ruleset_parsing() {
     //TODO: Make this work for all examples
     
-    let solve_test = build_default1dpeg::<MinkidSolver>();
+    let solve_test = build_default1dpeg::<MinkidSolver>().unwrap();
     assert!(solve_test.get_ruleset() == &Ruleset::from_string(&solve_test.get_ruleset().to_string()),"default1dpeg ruleset failed to recreate itself");
 
-    let solve_test = build_threerule1dpeg::<MinkidSolver>();
+    let solve_test = build_threerule1dpeg::<MinkidSolver>().unwrap();
     assert!(solve_test.get_ruleset() == &Ruleset::from_string(&solve_test.get_ruleset().to_string()),"threerule1dpeg ruleset failed to recreate itself");
 
-    let solve_test = build_defaultsolver::<MinkidSolver>();
+    let solve_test = build_defaultsolver::<MinkidSolver>().unwrap();
     assert!(solve_test.get_ruleset() == &Ruleset::from_string(&solve_test.get_ruleset().to_string()),"defaultsolver ruleset failed to recreate itself");
 
-    let solve_test = build_threerulesolver::<MinkidSolver>();
+    let solve_test = build_threerulesolver::<MinkidSolver>().unwrap();
     assert!(solve_test.get_ruleset() == &Ruleset::from_string(&solve_test.get_ruleset().to_string()),"threerulesolver ruleset failed to recreate itself");
 }

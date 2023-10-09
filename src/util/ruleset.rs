@@ -131,40 +131,51 @@ impl Ruleset {
         }
         result
     }
-    pub fn is_generating(&self) -> bool {
+    pub fn has_generating_rule(&self) -> Option<(Vec<SymbolIdx>,Vec<SymbolIdx>)> {
         for rule in &self.rules {
-            //Map each element to its string rep then join all string reps together by a space.
             let lhs_len = rule.0.len();
             for rhs_vec in rule.1 {
                 if rhs_vec.len() > lhs_len {
-                    return true;
+                    return Some((rule.0.clone(),rhs_vec.clone()));
                 }
             }
         }
-        false
+        None
     }
-    pub fn is_deleting(&self) -> bool {
+    pub fn has_deleting_rule(&self) -> Option<(Vec<SymbolIdx>,Vec<SymbolIdx>)> {
         for rule in &self.rules {
-            //Map each element to its string rep then join all string reps together by a space.
             let lhs_len = rule.0.len();
             for rhs_vec in rule.1 {
                 if rhs_vec.len() < lhs_len {
-                    return true;
+                    return Some((rule.0.clone(),rhs_vec.clone()));
                 }
             }
         }
-        false
+        None
     }
-    pub fn is_length_preserving(&self) -> bool {
+    pub fn has_non_length_preserving_rule(&self) -> Option<(Vec<SymbolIdx>,Vec<SymbolIdx>)> {
         for rule in &self.rules {
-            //Map each element to its string rep then join all string reps together by a space.
             let lhs_len = rule.0.len();
             for rhs_vec in rule.1 {
                 if rhs_vec.len() != lhs_len {
-                    return true;
+                    return Some((rule.0.clone(),rhs_vec.clone()));
                 }
             }
         }
-        false
+        None
+    }
+    pub fn has_definitely_cyclic_rule(&self) -> Option<(Vec<SymbolIdx>,Vec<SymbolIdx>)> {
+        for rule in &self.rules {
+            for rhs_vec in rule.1 {
+                if let Some(rhs_as_lhs_rules) = self.rules.get(rhs_vec) {
+                    for rhs_from_rhs in rhs_as_lhs_rules {
+                        if rule.0 == rhs_from_rhs {
+                            return Some((rule.0.clone(),rhs_vec.clone()))
+                        }
+                    }
+                }
+            }
+        }
+        None
     }
 }
