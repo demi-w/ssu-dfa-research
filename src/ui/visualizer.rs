@@ -45,7 +45,6 @@ impl CVisualizer {
         );
         egui::Grid::new("gen_summary").striped(true).show(ui, |ui| {
         if let Some(dfa) = &constructor.dfa_content {
-            let len_sum : usize = constructor.iteration_state_lens.iter().sum();
             
             let ss_element_len = dfa.1.element_len();
             if let Some(init_time) = constructor.initialization_dur {
@@ -60,8 +59,11 @@ impl CVisualizer {
                 ui.end_row();
                 ui.label(format!("Initialization time: {}",constructor.initialization_dur.unwrap().as_secs_f64()));
             }
-            
-            ui.label(format!("Total states discovered: {}",len_sum));
+            if let Some(state_len) = constructor.iteration_state_lens.last() {
+                ui.label(format!("Total states discovered: {}",state_len));
+            } else {
+                ui.label(format!("Total states discovered: N/A"));
+            }
             if constructor.iteration_state_lens.len() >= 2 {
                 let temp_len = constructor.iteration_state_lens.len();
                 ui.label(format!("States created last iteration: {}",constructor.iteration_state_lens[temp_len-1]-constructor.iteration_state_lens[temp_len-2]));
