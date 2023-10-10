@@ -42,6 +42,7 @@ The rest should hopefully be somewhat inuitive -- give a goal DFA to the program
 # How does this work?
 
 The underlying concept of this project is based on how DFA minimization works. To understand that in more detail, check out my talk I gave about it at SSU:
+
 [![The title slide of my thesis](https://img.youtube.com/vi/RQNweqJN7Zw/0.jpg)](https://www.youtube.com/watch?v=RQNweqJN7Zw)
 
 # Which solver should I use?
@@ -53,18 +54,22 @@ The legacy implementations are simpler ways of deducing the correctness of a str
 legacy
 
 BFS perf
-![~1500 strings per second](https://github.com/hbgg/ssu-dfa-research/blob/main/assets/BFS%20perf?raw=true)
+
+![~1500 strings per second](https://github.com/hbgg/ssu-dfa-research/blob/main/assets/BFS%20perf.png?raw=true)
 
 Hash perf
-![~750 strings per second](https://github.com/hbgg/ssu-dfa-research/blob/main/assets/Hash%20perf?raw=true)
+
+![~750 strings per second](https://github.com/hbgg/ssu-dfa-research/blob/main/assets/Hash%20perf.png?raw=true)
 
 vs. recommended
 
 Minkid perf
-![~555000 strings per second](https://github.com/hbgg/ssu-dfa-research/blob/main/assets/Minkid%20perf?raw=true)
+
+![~555000 strings per second](https://github.com/hbgg/ssu-dfa-research/blob/main/assets/Minkid%20perf.png?raw=true)
 
 Subset perf
-![~35000 strings per second](https://github.com/hbgg/ssu-dfa-research/blob/main/assets/Subset%20perf?raw=true)
+
+![~35000 strings per second](https://github.com/hbgg/ssu-dfa-research/blob/main/assets/Subset%20perf.png?raw=true)
 
 To highlight the strings deduced per second, my recommended solvers are ~740x faster. Additionally, tasks that take BFS and Hash solvers ~128GB of memory take Minkid and Subset ~40MB. Additionally, BFS is the only implementation that uses multithreading, so that's 16 threads of BFS getting blown out by a single thread of Minkid.
 
