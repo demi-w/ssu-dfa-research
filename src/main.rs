@@ -1,6 +1,7 @@
 #![warn(unused_crate_dependencies)]
 #![warn(unused_import_braces)]
 #![warn(unused_qualifications)]
+#![windows_subsystem = "windows"]
 use eframe::egui;
 use egui::plot::{Plot, Line, Legend};
 use std::fmt::format;
