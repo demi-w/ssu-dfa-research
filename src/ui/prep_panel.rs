@@ -182,8 +182,14 @@ impl PrepPanel {
         egui::ComboBox::from_id_source("Select solver")
             .selected_text(format!("{}", self.solver_type))
             .show_ui(ui, |ui| {
+                ui.label("Suggested");
+                ui.separator();
                 ui.selectable_value(&mut self.solver_type, AvailableSolver::Minkid, AvailableSolver::Minkid.to_string());
                 ui.selectable_value(&mut self.solver_type, AvailableSolver::Subset, AvailableSolver::Subset.to_string());
+                ui.label("Legacy");
+                ui.separator();
+                ui.selectable_value(&mut self.solver_type, AvailableSolver::BFS, AvailableSolver::BFS.to_string());
+                ui.selectable_value(&mut self.solver_type, AvailableSolver::Hash, AvailableSolver::Hash.to_string());
             }
         );
         }); 

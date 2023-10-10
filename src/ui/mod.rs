@@ -27,7 +27,7 @@ pub use web_time::Instant;
 #[cfg(not(target_arch = "wasm32"))]
 pub use std::time::Instant;
 
-use crate::solver::{MinkidSolver, Solver, SubsetSolver};
+use crate::solver::*;
 
 pub enum OpenItem {
     Goal,
@@ -37,15 +37,19 @@ pub enum OpenItem {
 #[derive(Clone,Copy, PartialEq)]
 pub enum AvailableSolver {
     Minkid,
-    Subset
+    Subset,
+    Hash,
+    BFS
 }
 
-
+//This is an unfortunate hack as dynamic dispatch would completely change the way that solvers are run
 impl AvailableSolver {
     fn get_phases(&self) -> Vec<String> {
         match self {
             AvailableSolver::Minkid => MinkidSolver::get_phases(),
-            AvailableSolver::Subset => SubsetSolver::get_phases()
+            AvailableSolver::Subset => SubsetSolver::get_phases(),
+            AvailableSolver::BFS => BFSSolver::get_phases(),
+            AvailableSolver::Hash => HashSolver::get_phases()
         }
     }
 }
@@ -54,7 +58,9 @@ impl Display for AvailableSolver {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             AvailableSolver::Minkid => write!(f,"Minkid"),
-            AvailableSolver::Subset => write!(f,"Subset")
+            AvailableSolver::Subset => write!(f,"Subset"),
+            AvailableSolver::BFS => write!(f,"Multithreaded BFS"),
+            AvailableSolver::Hash => write!(f,"Hash")
         }
         
     }

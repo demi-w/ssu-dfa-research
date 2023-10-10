@@ -150,7 +150,7 @@ impl Solver for BFSSolver {
 }
 
 impl BFSSolver {
-    pub fn new(ruleset:Ruleset, goal: DFA, worker_threads : usize) -> Self {
+    pub fn new_with_threads(ruleset:Ruleset, goal: DFA, worker_threads : usize) -> Self {
         let (min_input, max_input) = BFSSolver::sized_init(&ruleset);
         BFSSolver { 
             rules: ruleset,

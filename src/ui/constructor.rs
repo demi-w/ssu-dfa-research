@@ -2,7 +2,7 @@ use std::{sync::mpsc::{Sender,Receiver}, thread::JoinHandle, time::Duration};
 
 use egui::{Ui, Color32, RichText};
 
-use crate::{solver::{DFAStructure, SSStructure, Solver, SubsetSolver}, util::{DFA, Ruleset, SymbolIdx, SymbolSet}};
+use crate::{solver::{DFAStructure, SSStructure, Solver, SubsetSolver, BFSSolver, HashSolver}, util::{DFA, Ruleset, SymbolIdx, SymbolSet}};
 use crate::solver::MinkidSolver;
 
 use crate::ui::{Instant,execute};
@@ -237,9 +237,33 @@ impl DFAConstructor{
                     }
                 }
                 
-            }
+            },
             AvailableSolver::Subset => {
                 match SubsetSolver::new(rules.clone(),goal.clone()) {
+                Ok(solver) => {self.run_dfa_arch(solver, k);}
+                Err(d_error) => {
+                    let _ = self.e_reporter.send(Error { 
+                            title: "Incompatible Solver".to_owned(), 
+                            body: RichText::new(d_error.to_string(&rules.symbol_set))
+                    });
+                    return;    
+                }
+            }
+            },
+            AvailableSolver::BFS => {
+                match BFSSolver::new(rules.clone(),goal.clone()) {
+                Ok(solver) => {self.run_dfa_arch(solver, k);}
+                Err(d_error) => {
+                    let _ = self.e_reporter.send(Error { 
+                            title: "Incompatible Solver".to_owned(), 
+                            body: RichText::new(d_error.to_string(&rules.symbol_set))
+                    });
+                    return;    
+                }
+            }
+            },
+            AvailableSolver::Hash => {
+                match HashSolver::new(rules.clone(),goal.clone()) {
                 Ok(solver) => {self.run_dfa_arch(solver, k);}
                 Err(d_error) => {
                     let _ = self.e_reporter.send(Error { 
