@@ -5,14 +5,14 @@ Assume that there exists some k-distinguishable DFA D that represents the langua
 
 My project can take P(x) and k, and assuming k is correct, produce D.
 
-It's actually even better than that!
+### It's actually even better than that!
 
 It can also take some program P'(x) -> y where y is also a string, alongside a goal DFA G.
 Assume that there exists some k-distinguishable DFA D' that represents the language of all strings x where P(x) is is a member of G.
 
 My project can take P'(x), G, and k, and assuming k is correct, produce D'.
 
-It's **actually** even better than **that!**
+### It's *actually* even better than *that!*
 
 P(x) doesn't even have to be a deterministic program! There can be multiple possible instructions to execute at a certain point, and as long as there exist a set of instructions that allows P(x) to become a member of G, it will be a part of D.
 
