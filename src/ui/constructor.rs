@@ -153,7 +153,7 @@ impl DFAConstructor{
     if let Some(dfa) = &self.final_dfa {
         ui.separator();
         if ui.button("Save DFA").clicked() {
-            save_dfa(self.final_dfa.as_ref().unwrap().clone())
+            save_dfa(self.final_dfa.as_ref().unwrap().clone(),self.e_reporter.clone());
         }
         if let Some(solver) = &self.last_solver {
             ui.separator();
@@ -269,19 +269,33 @@ impl DFAConstructor{
 }
 
 #[cfg(not(target_arch = "wasm32"))]
-fn save_dfa(dfa : DFA) {
+fn save_dfa(dfa : DFA, e_sender : Sender<Error>) {
 
-    let task = rfd::AsyncFileDialog::new().set_file_name("result.jff").add_filter("Recognized DFA types", &["dfa","jff"]).save_file();
+    let task = rfd::AsyncFileDialog::new().set_file_name("result.jff").add_filter(".dfa (used with pyscripts)", &["dfa"]).add_filter(".jff (used with jflap)", &["jff"]).save_file();
     let async_f = async move {
         let opened_file_r = task.await;
         
         if let Some(opened_file) = opened_file_r {
             let path = PathBuf::from(opened_file.file_name());
-            if path.extension().unwrap().to_str().unwrap() == "jff" {
-                opened_file.write(&dfa.save_jflap_to_bytes()).await.unwrap();
-            }else {
-                opened_file.write(&serde_json::to_string(&dfa).unwrap().as_bytes()).await.unwrap();
+            match path.extension() {
+                Some(extension) => {
+                    if extension.to_str().unwrap() == "jff" {
+                        if let Err(e) = opened_file.write(&dfa.save_jflap_to_bytes()).await {
+                            let _ = e_sender.send(Error { title: "Unable to save".to_owned(), body: RichText::new(format!("{}",e)) });
+                        }
+                    }else if extension.to_str().unwrap() == "dfa" {
+                        if let Err(e) = opened_file.write(&serde_json::to_string(&dfa).unwrap().as_bytes()).await {
+                            let _ = e_sender.send(Error { title: "Unable to save".to_owned(), body: RichText::new(format!("{}",e)) });
+                        }
+                    } else {
+                        let _ = e_sender.send(Error { title: "Invalid file extension".to_owned(), body: RichText::new("Needs to be .dfa of .jff.") });
+                    }
+                }
+                None => {
+                    let _ = e_sender.send(Error { title: "Invalid file extension".to_owned(), body: RichText::new("Needs to be .dfa of .jff.") });
+                }
             }
+
         }
     };
     execute(async_f);
