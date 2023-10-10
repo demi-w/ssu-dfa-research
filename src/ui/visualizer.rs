@@ -50,12 +50,13 @@ impl CVisualizer {
             if let Some(init_time) = constructor.initialization_dur {
                 let total_time = init_time + constructor.phase_content.iter().map(|x|x.iter().sum::<Duration>()).sum();
                 ui.label(format!("Total time: {}",total_time.as_secs_f64()));
+                if let Some(last_s) = &constructor.last_solver {
                 if let Some(state_len) = constructor.iteration_state_lens.last() {
-                    let total_boards = ss_element_len + (state_len - 1) *constructor.last_solver.as_ref().unwrap().goal.symbol_set.length.pow(prep_panel.sig_k as u32 + 1);
+                    let total_boards = ss_element_len + (state_len - 1) *constructor.last_solver.as_ref().unwrap().goal.symbol_set.length.pow(last_s.sig_k as u32 + 1);
                     ui.label(format!("Total # of strings processed: {}",total_boards));
                     
                     ui.label(format!("Strings processed per second: {:.2}", total_boards as f64 / total_time.as_secs_f64()));
-                }
+                }}
                 ui.end_row();
                 ui.label(format!("Initialization time: {}",constructor.initialization_dur.unwrap().as_secs_f64()));
             }

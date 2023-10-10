@@ -37,7 +37,8 @@ pub struct DFAConstructor {
 pub struct SolverContents {
     pub rules : Ruleset,
     pub goal : DFA,
-    pub solve_type : AvailableSolver
+    pub solve_type : AvailableSolver,
+    pub sig_k : usize
 }
 
 impl DFAConstructor{
@@ -147,62 +148,63 @@ impl DFAConstructor{
         }
     }
     pub fn update_solve_window(&mut self, ui : &mut Ui) {
-
-    
-
-    if let Some(dfa) = &self.final_dfa {
-        ui.separator();
-        if ui.button("Save DFA").clicked() {
-            save_dfa(self.final_dfa.as_ref().unwrap().clone(),self.e_reporter.clone());
-        }
-        if let Some(solver) = &self.last_solver {
-            ui.separator();
-            ui.horizontal_wrapped(|ui| {
-            ui.label("String to solve:");
-            ui.text_edit_singleline(&mut self.solve_string);
-            if ui.button("Solve String").clicked() {
-                match dfa.symbol_set.string_to_symbols(&self.solve_string.to_string().split(" ").collect()) {
-                    Ok(input_str) => {
-                        self.solve_path = Some(MinkidSolver::new(solver.rules.clone(),solver.goal.clone()).unwrap().solve_string_annotated(dfa, &input_str));
-                        self.last_solve_string = Some(input_str);
-                    }
-                    Err(idx) => {
-                        let _ = self.e_reporter.send(Error { 
-                            title: "Unrecognized symbol".to_string(), 
-                            body: RichText::new(format!("\"{}\" not recognized. Make sure to put a space in between symbols!",self.solve_string.to_string().split(" ").nth(idx).unwrap())) });
-                    }
-                }
-
-            }
-            });
-            if let Some(solution_path) = &self.solve_path {
-                if let Ok(path) = solution_path {
-                    if path.len() == 0 {
-                        ui.label("This string matches the goal DFA without any SRS applications.");
-                    }else {
-                        egui::containers::scroll_area::ScrollArea::vertical().id_source("solve_path").show(ui, |ui| {
-                        ui.group(|ui| {
-                            let start_str = self.last_solve_string.as_ref().unwrap();
-
-                            render_path_element(ui, &dfa.symbol_set, start_str, &path[0].3, path[0].0, path[0].1, path[0].2);
-
-                            for path_idx in 1..path.len() {
-                                ui.separator();
-                                render_path_element(ui, &dfa.symbol_set, &path[path_idx-1].3, &path[path_idx].3, path[path_idx].0, path[path_idx].1, path[path_idx].2);
-                            }
-                        });
-                        });
-                    }
-                } else {
-                    ui.label("According to the generated DFA, this string is unsolvable!");
-                }
-            }
-
-        }
-        /*if cfg!(target_arch = "wasm32") {
-            ui.hyperlink(&self.blob_link);
-        }*/
+    ui.add_enabled_ui(self.final_dfa.is_some(), |ui|{
+    ui.separator();
+    if ui.button("Save DFA").clicked() {
+        save_dfa(self.final_dfa.as_ref().unwrap().clone(),self.e_reporter.clone());
     }
+
+    ui.separator();
+    ui.horizontal_wrapped(|ui| {
+    ui.label("String to solve:");
+    ui.text_edit_singleline(&mut self.solve_string);
+    if ui.button("Solve String").clicked() {
+        if let Some(solver) = &self.last_solver {
+        if let Some(dfa) = &self.final_dfa {
+            match dfa.symbol_set.string_to_symbols(&self.solve_string.to_string().split(" ").collect()) {
+                
+                Ok(input_str) => {
+                    self.solve_path = Some(MinkidSolver::new(solver.rules.clone(),solver.goal.clone()).unwrap().solve_string_annotated(dfa, &input_str));
+                    self.last_solve_string = Some(input_str);
+                }
+                Err(idx) => {
+                    let _ = self.e_reporter.send(Error { 
+                        title: "Unrecognized symbol".to_string(), 
+                        body: RichText::new(format!("\"{}\" not recognized. Make sure to put a space in between symbols!",self.solve_string.to_string().split(" ").nth(idx).unwrap())) });
+                }
+            }
+        }}
+
+    }
+    });
+    if let Some(dfa) = &self.final_dfa {
+    if let Some(solution_path) = &self.solve_path {
+        if let Ok(path) = solution_path {
+            if path.len() == 0 {
+                ui.label("This string matches the goal DFA without any SRS applications.");
+            }else {
+                egui::containers::scroll_area::ScrollArea::vertical().id_source("solve_path").show(ui, |ui| {
+                ui.group(|ui| {
+                    let start_str = self.last_solve_string.as_ref().unwrap();
+
+                    render_path_element(ui, &dfa.symbol_set, start_str, &path[0].3, path[0].0, path[0].1, path[0].2);
+
+                    for path_idx in 1..path.len() {
+                        ui.separator();
+                        render_path_element(ui, &dfa.symbol_set, &path[path_idx-1].3, &path[path_idx].3, path[path_idx].0, path[path_idx].1, path[path_idx].2);
+                    }
+                });
+                });
+            }
+        } else {
+            ui.label("According to the generated DFA, this string is unsolvable!");
+        }
+    }}
+
+    /*if cfg!(target_arch = "wasm32") {
+        ui.hyperlink(&self.blob_link);
+    }*/
+    });
 
 
     }
@@ -260,7 +262,7 @@ impl DFAConstructor{
         self.max_duration = 0.0;
         self.has_finished = false;
         self.has_started = true;
-        self.last_solver = Some(SolverContents { rules: rules.clone(), goal: goal.clone(), solve_type : solver });
+        self.last_solver = Some(SolverContents { rules: rules.clone(), goal: goal.clone(), solve_type : solver, sig_k : k });
         self.last_phase_msg = Instant::now();
 
         
