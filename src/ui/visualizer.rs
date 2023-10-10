@@ -1,9 +1,9 @@
-use std::{fmt::format, time::Duration};
+use std::{time::Duration};
 
 use egui::{Ui, plot::{Legend, Plot, Line}, Vec2};
 
 
-use super::{DFAConstructor, prep_panel, PrepPanel};
+use super::{DFAConstructor, PrepPanel};
 use crate::ui::Instant;
 
 #[derive(Default)]

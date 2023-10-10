@@ -1,7 +1,7 @@
 use std::collections::{HashMap, HashSet};
 
 use bitvec::vec::BitVec;
-use petgraph::{prelude::DiGraph, adj::NodeIndex};
+use petgraph::{prelude::DiGraph};
 
 use crate::util::{SymbolIdx, Ruleset};
 use crate::DFA;
@@ -40,7 +40,7 @@ pub enum SSStructure {
 }
 
 impl SSStructure {
-    pub fn accepting_states(&self, rules : &Ruleset) -> HashSet<usize> {
+    pub fn accepting_states(&self) -> HashSet<usize> {
         let mut result = HashSet::new();
         match self {
             Self::Boolean(vec) => {
@@ -76,7 +76,7 @@ impl SSStructure {
 
 pub fn event_to_dfa(dfa_s : &DFAStructure, sig_sets : &SSStructure, rules : &Ruleset) -> DFA {
     let trans_table = dfa_s.to_dense(rules.symbol_set.length);
-    let accepting_states = sig_sets.accepting_states(rules);
+    let accepting_states = sig_sets.accepting_states();
     DFA {
         starting_state : 0,
         state_transitions : trans_table,

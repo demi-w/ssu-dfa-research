@@ -4,7 +4,7 @@ use std::thread;
 use std::time::Duration;
 
 use async_trait::async_trait;
-use bitvec::domain::Domain;
+
 use crossbeam::queue::SegQueue;
 
 use crate::util::{Ruleset, DFA, SymbolIdx};

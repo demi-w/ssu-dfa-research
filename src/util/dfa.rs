@@ -1,6 +1,6 @@
 use crate::{SymbolSet, SymbolIdx, wbf_fix};
 use serde::{Deserialize, Serialize};
-use std::{collections::{HashSet, HashMap, VecDeque}, io::Read, hash::Hash, result};
+use std::{collections::{HashSet, HashMap}, io::Read};
 use xml::{writer::{EmitterConfig, XmlEvent},reader::EventReader};
 
 use serde_json::Result;
@@ -33,7 +33,7 @@ type File = FileHandle;
 #[cfg(target_arch = "wasm32")]
 use wasm_bindgen_futures;
 
-use super::Ruleset;
+
 
 impl DFA {
 
@@ -253,9 +253,9 @@ impl DFA {
             match cur_event {
                 xml::reader::XmlEvent::EndDocument => {break},
                 xml::reader::XmlEvent::Whitespace(_) => {},
-                xml::reader::XmlEvent::StartDocument { version, encoding, standalone } => {},
+                xml::reader::XmlEvent::StartDocument { version : _, encoding : _, standalone : _ } => {},
                 xml::reader::XmlEvent::Comment(_) => {},
-                xml::reader::XmlEvent::StartElement { name, attributes, namespace } => {
+                xml::reader::XmlEvent::StartElement { name, attributes, namespace : _ } => {
                     match &name.local_name[..] { 
                         "state" => {
                             let cur_str = &attributes.iter().find(|&x| x.name.local_name == "id").unwrap().value;
@@ -411,9 +411,9 @@ impl DFA {
             );
         (contents.0, Self::load_jflap_from_string(&contents.1))
     }
-    pub fn minify(&mut self) {}
+    //pub fn minify(&mut self) {}
 
-    pub fn one_rule_expand(&self, rules : &Ruleset) -> DFA{ return self.clone()}
+    //pub fn one_rule_expand(&self, rules : &Ruleset) -> DFA{ return self.clone()}
 }
 
 impl PartialEq for DFA {

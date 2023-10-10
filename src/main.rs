@@ -3,24 +3,11 @@
 #![warn(unused_qualifications)]
 #![windows_subsystem = "windows"]
 use eframe::egui;
-use egui::plot::{Plot, Line, Legend};
-use std::fmt::format;
-use std::fs::File;
-use std::io::prelude::*;
-use std::thread::JoinHandle;
-use std::time::Duration;
-use std::path::PathBuf;
-
-use gloo_file::ObjectUrl;
+use egui::plot::Plot;
 
 
 
-use srs_to_dfa::util::*;
-use srs_to_dfa::builder::build_default1dpeg;
-use srs_to_dfa::wbf_fix;
-use srs_to_dfa::ui::*;
-use std::sync::mpsc::{Receiver, Sender};
-use rfd::{self, FileHandle};
+use srs_to_dfa::{ui::*, util::Ruleset};
 
 #[cfg(target_arch = "wasm32")]
 pub use web_time::Instant;
@@ -28,9 +15,6 @@ pub use web_time::Instant;
 
 #[cfg(not(target_arch = "wasm32"))]
 pub use std::time::Instant;
-
-
-use srs_to_dfa::test::*;
 
 
 #[cfg(target_arch = "wasm32")]
@@ -41,7 +25,7 @@ use web_sys;
 fn main() {
     let options = eframe::NativeOptions::default();
     eframe::run_native(
-        "SRS Box",
+        "SRS To DFA",
         options,
         Box::new(|_cc| Box::new(MyApp::default())),
     ).unwrap();
@@ -108,7 +92,7 @@ impl eframe::App for MyApp {
         egui::CentralPanel::default().show(ctx, |ui| {
             ui.add_enabled_ui(!self.e_reporter.error_onscreen, |ui|{
             self.prep_panel.update(ui);
-            self.dfa_constructor.update(ui,&mut self.prep_panel);
+            self.dfa_constructor.update(&mut self.prep_panel);
             });
         });
         egui::Window::new("DFA Generator").collapsible(false).open(&mut self.open_generator_window).show(ctx, |ui| {
@@ -116,7 +100,7 @@ impl eframe::App for MyApp {
             self.c_visualizer.update(ui, &self.dfa_constructor, &self.prep_panel);
             ui.add_enabled_ui((!self.dfa_constructor.has_started && !self.dfa_constructor.has_finished) || self.dfa_constructor.has_finished, |ui|{
             ui.horizontal_wrapped(|ui|{
-            if self.prep_panel.solve_window_update(ui, &self.dfa_constructor) { 
+            if self.prep_panel.solve_window_update(ui) { 
                 self.dfa_constructor.run_dfa(self.prep_panel.solver_type,Ruleset::from_string(&self.prep_panel.srs_text),self.prep_panel.goal.clone(),self.prep_panel.sig_k,self.prep_panel.verify_run);
                 Plot::new("my_plot").reset();
             }
@@ -137,22 +121,6 @@ impl eframe::App for MyApp {
 fn generate_obj_link(dfa : &DFA) -> String {
     "".to_owned()
 }*/
-
-
-
-#[cfg(target_arch = "wasm32")]
-fn generate_obj_link(dfa : &DFA) -> String {
-    let jeez = dfa.save_jflap_to_bytes();
-    let ew = String::from_utf8_lossy(&jeez);
-    let awk = ew.as_ref();
-    let blob = gloo_file::File::new_with_options("result.jff",awk,Some("text/plain"),None);
-    ObjectUrl::from(blob).to_string()
-}
-
-#[cfg(not(target_arch = "wasm32"))]
-fn generate_obj_link(dfa : &DFA) -> String {
-    "this shouldn't be visible.".to_owned()
-}
 
 
 /*#[cfg(not(target_arch = "wasm32"))]

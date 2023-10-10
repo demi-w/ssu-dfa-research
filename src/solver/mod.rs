@@ -1,5 +1,5 @@
 
-use std::{sync::mpsc::{Sender, Receiver, channel}, collections::{HashMap, HashSet}, io::{self, Write}, fmt::Display, error::Error};
+use std::{sync::mpsc::{Sender, Receiver, channel}, collections::{HashMap, HashSet}, io::{self, Write}};
 
 use std::thread;
 

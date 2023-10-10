@@ -1,15 +1,15 @@
-use std::{sync::mpsc::{Sender,Receiver}, thread::JoinHandle, time::Duration, fmt::format};
+use std::{sync::mpsc::{Sender,Receiver}, thread::JoinHandle, time::Duration};
 
 use egui::{Ui, Color32, RichText};
 
-use crate::{solver::{DFAStructure, SSStructure, Solver, RuleGraphRoot, SubsetSolver}, util::{DFA, Ruleset, SymbolIdx, SymbolSet}};
+use crate::{solver::{DFAStructure, SSStructure, Solver, SubsetSolver}, util::{DFA, Ruleset, SymbolIdx, SymbolSet}};
 use crate::solver::MinkidSolver;
 
 use crate::ui::{Instant,execute};
 
 use std::path::PathBuf;
 
-use super::{AvailableSolver, prep_panel, PrepPanel, Error};
+use super::{AvailableSolver, PrepPanel, Error};
 
 
 pub struct DFAConstructor {
@@ -66,7 +66,7 @@ impl DFAConstructor{
         }
     }
 
-    pub fn update(&mut self, ui : &mut Ui, prep_panel : &mut PrepPanel) {
+    pub fn update(&mut self, prep_panel : &mut PrepPanel) {
         if cfg!(not(target_arch = "wasm32")) {
             let mut handle = None;
             std::mem::swap(&mut handle, &mut self.handle);
@@ -167,7 +167,7 @@ impl DFAConstructor{
                         self.last_solve_string = Some(input_str);
                     }
                     Err(idx) => {
-                        self.e_reporter.send(Error { 
+                        let _ = self.e_reporter.send(Error { 
                             title: "Unrecognized symbol".to_string(), 
                             body: RichText::new(format!("\"{}\" not recognized. Make sure to put a space in between symbols!",self.solve_string.to_string().split(" ").nth(idx).unwrap())) });
                     }

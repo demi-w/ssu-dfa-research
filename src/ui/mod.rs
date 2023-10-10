@@ -19,7 +19,7 @@ pub type PathSender = Sender<(String,FileHandle,OpenItem)>;
 pub type PathReciever = Receiver<(String,FileHandle,OpenItem)>;
 
 
-use egui::Ui;
+
 #[cfg(target_arch = "wasm32")]
 pub use web_time::Instant;
 

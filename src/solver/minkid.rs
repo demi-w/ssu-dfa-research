@@ -1,4 +1,4 @@
-use std::{collections::HashSet, io::Write};
+use std::{collections::HashSet};
 
 use bitvec::prelude::*;
 use petgraph::{graph::{DiGraph,NodeIndex}, algo::{condensation, toposort}, Graph, visit::{Dfs, EdgeRef}, Direction::{Outgoing, Incoming}};

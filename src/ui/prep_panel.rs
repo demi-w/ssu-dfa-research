@@ -1,10 +1,10 @@
-use std::{path::PathBuf, fmt::format, sync::mpsc::Sender};
+use std::{path::PathBuf, sync::mpsc::Sender};
 
 use egui::{Ui, RichText};
 
-use crate::{util::{DFA, Ruleset}, builder::{build_1dpeg_rs, build_onlyone1, build_all0, build_onlyone2, build_1dpeg_result, build_flip_rs, build_flipx3_rs, build_threerule1dpeg_rs, build_defaultsolver_rs, build_threerulesolver_rs, build_2xnswap_rs, build_2dpeg_goal, build_all000, build_default2dpegx3, build_default2dpegx3_rs}, solver::Solver};
+use crate::{util::{DFA, Ruleset}, builder::*};
 
-use super::{open_file, OpenItem, PathSender, PathReciever, constructor, DFAConstructor, AvailableSolver, Error};
+use super::{open_file, OpenItem, PathSender, PathReciever, AvailableSolver, Error};
 
 pub struct PrepPanel {
     pub srs_text : String,
@@ -162,7 +162,7 @@ impl PrepPanel {
         
     }
 
-    pub fn solve_window_update(&mut self, ui : &mut Ui, constructor : &DFAConstructor) -> bool{
+    pub fn solve_window_update(&mut self, ui : &mut Ui) -> bool{
         let mut was_solve_asked = false;
         
         ui.vertical(|ui|{
@@ -224,7 +224,7 @@ impl PrepPanel {
                             match path.extension().unwrap().to_str().unwrap() {
                                 "dfa" => {self.goal = serde_json::from_str(&contents).unwrap();self.goal_pick = ExampleGoals::Custom(path.file_name().unwrap().to_os_string().into_string().unwrap());},
                                 "jff" => {self.goal = DFA::load_jflap_from_string(&contents);self.goal_pick = ExampleGoals::Custom(path.file_name().unwrap().to_os_string().into_string().unwrap());},
-                                _ => {self.e_reporter.send(Error {title : "Unrecognized file type".to_owned(),body : RichText::new("Only .jff and .dfa files can be parsed")});}
+                                _ => {let _ = self.e_reporter.send(Error {title : "Unrecognized file type".to_owned(),body : RichText::new("Only .jff and .dfa files can be parsed")});}
                             }
                         }
                         OpenItem::SRS => {
@@ -255,7 +255,6 @@ fn save_srs(input : String) {
         let opened_file_r = task.await;
         
         if let Some(opened_file) = opened_file_r {
-            let path = PathBuf::from(opened_file.file_name());
             opened_file.write(input.as_bytes()).await.unwrap();
         }
     };
