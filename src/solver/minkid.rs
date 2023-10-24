@@ -1,5 +1,9 @@
 use std::{collections::HashSet};
 
+use std::sync::{RwLock, Arc, Mutex};
+
+use rayon::prelude::*;
+
 use bitvec::prelude::*;
 use petgraph::{graph::{DiGraph,NodeIndex}, algo::{condensation, toposort}, Graph, visit::{Dfs, EdgeRef}, Direction::{Outgoing, Incoming}};
 
@@ -81,13 +85,14 @@ impl Solver for MinkidSolver {
     //graph of connections based on LHS->RHS links for all states
     //Usize is index in trans_table
 
-
+    
 
     let sig_set = &self.rules.symbol_set.build_sig_k(sig_k);
     self.build_ss_link_graph(sig_set);
-    let mut dfa_graph = DiGraph::<MKDFAState,SymbolIdx>::new();
+    let real_self = Arc::new(self);
+    let mut dfa_graph = DiGraph::<RwLock<MKDFAState>,SymbolIdx>::new();
     let mut link_graph = DiGraph::<(), (Vec<SymbolIdx>,Vec<SymbolIdx>)>::new();
-    dfa_graph.add_node(MKDFAState { minkids: self.goal_minkids[self.goal.starting_state].clone(), goal_states: vec![self.goal.starting_state] });
+    dfa_graph.add_node(RwLock::new(MKDFAState { minkids: real_self.goal_minkids[real_self.goal.starting_state].clone(), goal_states: vec![real_self.goal.starting_state] }));
     link_graph.add_node(());
     //number of nodes after an iteration.
     //Each iteration only works if there are two lengths -- so we start with two.
@@ -96,7 +101,7 @@ impl Solver for MinkidSolver {
     //While new elements are actually getting added to the DFA
     while iteration_lens[iteration_lens.len() - 2] < iteration_lens[iteration_lens.len() - 1] {
         if is_debug {
-            dfa_events.send(self.translate_to_debug(&dfa_graph, &sig_set)).unwrap();
+            dfa_events.send(real_self.translate_to_debug(&dfa_graph, &sig_set)).unwrap();
         }
         let mut last_time = Instant::now();
         //First, adding all prospective DFA elements
@@ -104,15 +109,15 @@ impl Solver for MinkidSolver {
         for start_idx in iteration_lens[iteration_lens.len() - 2]..iteration_lens[iteration_lens.len() - 1] {
             //Root node that prospective state will be connected to
             let start_node = NodeIndex::new(start_idx);
-            for next_sym in 0..(self.rules.symbol_set.length as SymbolIdx) {
+            for next_sym in 0..(real_self.rules.symbol_set.length as SymbolIdx) {
                 //states that the prospective state can reach into the goal DFA
                 let mut goal_connections = vec![];
                 //Set of minimum kids that can be added without any SRS applications.
                 let mut minkids = HashSet::new();
                 //For each goal DFA state that the root node can reach,
-                for start_connection in &dfa_graph[start_node].goal_states {
+                for start_connection in &dfa_graph[start_node].write().unwrap().goal_states {
                     //Add where the DFA goes after the input symbol that defines the connection between root and prospective DFA state
-                    let new_connect = self.goal.state_transitions[*start_connection][next_sym as usize];
+                    let new_connect = real_self.goal.state_transitions[*start_connection][next_sym as usize];
                     //Don't add anything twice. Seems like that'd be trouble.
                     if !goal_connections.contains(&new_connect){
                         //If that connection to the goal DFA hasn't already been made,
@@ -121,13 +126,13 @@ impl Solver for MinkidSolver {
 
                         //And add the minkids that don't require SRS applications.
                         if minkids.is_empty() {
-                            minkids = self.goal_minkids[new_connect].clone();
+                            minkids = real_self.goal_minkids[new_connect].clone();
                         }else{
-                            self.add_set_to_minkids(&mut minkids, &self.goal_minkids[new_connect]);
+                            real_self.add_set_to_minkids(&mut minkids, &real_self.goal_minkids[new_connect]);
                         }
                     }
                 }
-                let new_node = dfa_graph.add_node(MKDFAState { minkids: minkids, goal_states: goal_connections });
+                let new_node = dfa_graph.add_node(RwLock::new(MKDFAState { minkids: minkids, goal_states: goal_connections }));
                 link_graph.add_node(());
                 dfa_graph.add_edge(start_node, new_node, next_sym);
             }
@@ -143,13 +148,13 @@ impl Solver for MinkidSolver {
         //In fact, this should probably be abused to cull old elements that cannot possibly add new info
         //But again... that's for later! ... and it assumes I don't end up building something completely new again :/
         let mut underflow_dodge = 0;
-        if self.max_input < iteration_lens.len() - 1 {
-            underflow_dodge = iteration_lens.len() - self.max_input - 1;
+        if real_self.max_input < iteration_lens.len() - 1 {
+            underflow_dodge = iteration_lens.len() - real_self.max_input - 1;
         }
         for start_idx in iteration_lens[underflow_dodge]..iteration_lens[iteration_lens.len() - 1] {
             //Root node that prospective state will be connected to
             let start_node = NodeIndex::new(start_idx);
-            for rule_list in &self.rules.rules {
+            for rule_list in &real_self.rules.rules {
                 let lhs_str = rule_list.0;
                 for rhs_str in rule_list.1 {
                     let mut lhs = vec![start_node];
@@ -189,7 +194,7 @@ impl Solver for MinkidSolver {
                         let rhs_strip = if p_rule_len < rhs_str.len() {&rhs_str[p_rule_len..]} else {&rhs_str[..0]};
                         for potential_lhs_edge in &potential_lhs_e {
                             for potential_rhs_edge in &potential_rhs_e {
-                                self.add_link(&mut link_graph, potential_lhs_edge.target(), potential_rhs_edge.target(), lhs_strip, rhs_strip);
+                                real_self.add_link(&mut link_graph, potential_lhs_edge.target(), potential_rhs_edge.target(), lhs_strip, rhs_strip);
                             }
                         }
                         for potential_lhs_edge in potential_lhs_e {
@@ -224,7 +229,7 @@ impl Solver for MinkidSolver {
                 let rhs = target;
                 let mut propagation_pairs = vec![(lhs,rhs)];
                 while let Some(prop_pair) = propagation_pairs.pop() {
-                    for sym in 0..self.rules.symbol_set.length {
+                    for sym in 0..real_self.rules.symbol_set.length {
                         let lhs_extension;
                         let rhs_extension;
                         if let Some(lhs_edge) = dfa_graph.edges_directed(prop_pair.0,Outgoing).find(|x| *x.weight() == sym as SymbolIdx) {
@@ -240,7 +245,7 @@ impl Solver for MinkidSolver {
                         if lhs == lhs_extension && rhs == rhs_extension {
                             continue;
                         }
-                        if self.add_link(&mut link_graph, lhs_extension, rhs_extension, &vec![][..], &vec![][..]).0 {
+                        if real_self.add_link(&mut link_graph, lhs_extension, rhs_extension, &vec![][..], &vec![][..]).0 {
                             link_graph.add_edge(lhs_extension, rhs_extension, (vec![],vec![]));
                             propagation_pairs.push((lhs_extension,rhs_extension));
                         }
@@ -299,34 +304,38 @@ impl Solver for MinkidSolver {
         //Alright, pretending/assuming that we've written that correctly, we move on to actually propagating ancestors!
         //this also sucks :(
         //Just to get the ball rolling, we run through everything new once
-        let mut affected_nodes = HashSet::new();
-        for prospective_idx in *iteration_lens.last().unwrap()..dfa_graph.node_count() {
+        let mut affected_nodes = Arc::new(Mutex::new(HashSet::new()));
+        let dfa_arc = Arc::new(dfa_graph);
+        let link_arc = Arc::new(link_graph);
+        (*iteration_lens.last().unwrap()..dfa_arc.node_count()).into_par_iter().for_each(|prospective_idx| {
             let prospective_node = NodeIndex::new(prospective_idx);
-            for edge in link_graph.edges_directed(prospective_node, Outgoing) {
+            for edge in link_arc.edges_directed(prospective_node, Outgoing) {
                 //If it modifies its source
-                if self.partial_link(&mut dfa_graph, sig_set, edge.weight(), edge.source(), edge.target()) {
-                    affected_nodes.insert(prospective_node);
+                if real_self.partial_link(&dfa_arc, sig_set, edge.weight(), edge.source(), edge.target()) {
+                    affected_nodes.lock().unwrap().insert(prospective_node);
                 }
             }
-        }
+        });
         //Continue propagating changes until no more exist!
         //This propagation could be better (do not add things to new list if they haven't been executed in current loop is the main one off the dome)
-        let mut old_affected_nodes = HashSet::new();
-        while !affected_nodes.is_empty() {
-            old_affected_nodes.clear();
+        let mut old_affected_nodes = Arc::new(Mutex::new(HashSet::new()));
+        while !affected_nodes.lock().unwrap().is_empty() {
+            old_affected_nodes.lock().unwrap().clear();
             std::mem::swap(&mut old_affected_nodes, &mut affected_nodes);
-            for affected_node in &old_affected_nodes {
-                for edge in link_graph.edges_directed(*affected_node, Incoming) {
+            old_affected_nodes.lock().unwrap().par_iter().for_each(|affected_node| {
+                for edge in link_arc.edges_directed(*affected_node, Incoming) {
                     //This should just be an optimization, as it implies an impossible thing. This is not why I have added it.
                     if edge.source().index() < *iteration_lens.last().unwrap() {
                         continue;
                     }
-                    if self.partial_link(&mut dfa_graph, sig_set, edge.weight(), edge.source(), *affected_node) {
-                        affected_nodes.insert(edge.source());
+                    if real_self.partial_link(&dfa_arc, sig_set, edge.weight(), edge.source(), *affected_node) {
+                        affected_nodes.lock().unwrap().insert(edge.source());
                     }
                 }
-            }
+            });
         }
+        dfa_graph = Arc::into_inner(dfa_arc).unwrap();
+        link_graph = Arc::into_inner(link_arc).unwrap();
         if is_debug {
             let dur = last_time.elapsed();
             phase_events.send(dur).unwrap();
@@ -343,7 +352,7 @@ impl Solver for MinkidSolver {
             
             for known_state in 0..(*iteration_lens.last().unwrap()+new_count) {
                 let state_node = NodeIndex::new(known_state);
-                if dfa_graph[pros_node].minkids == dfa_graph[state_node].minkids {
+                if dfa_graph[pros_node].read().unwrap().minkids == dfa_graph[state_node].read().unwrap().minkids {
                     equivalent_known = Some(state_node);
                     break
                 }
@@ -363,7 +372,7 @@ impl Solver for MinkidSolver {
                         potential_incoming = link_graph.next_edge(real_incoming, Incoming);
                         let source = link_graph.edge_endpoints(real_incoming).unwrap().0;
                         let rust_scared = link_graph[real_incoming].clone();
-                        if self.add_link(&mut link_graph, source, equiv, &rust_scared.0[..], &rust_scared.1[..]).1 {
+                        if real_self.add_link(&mut link_graph, source, equiv, &rust_scared.0[..], &rust_scared.1[..]).1 {
                             potential_incoming = link_graph.first_edge(pros_node, Incoming);
                         }
                     }
@@ -373,7 +382,7 @@ impl Solver for MinkidSolver {
                         potential_outgoing = link_graph.next_edge(real_outgoing, Outgoing);
                         let target = link_graph.edge_endpoints(real_outgoing).unwrap().1;
                         let rust_scared = link_graph[real_outgoing].clone();
-                        if self.add_link(&mut link_graph, equiv,target, &rust_scared.0[..], &rust_scared.1[..]).1 {
+                        if real_self.add_link(&mut link_graph, equiv,target, &rust_scared.0[..], &rust_scared.1[..]).1 {
                             potential_outgoing = link_graph.first_edge(pros_node, Outgoing);
                         }
                     }
@@ -398,16 +407,16 @@ impl Solver for MinkidSolver {
         //Actually working pass 8/5 (i'll admit, I took a weeklong break. Still pretty brutal tho)
     }
     if is_debug {
-        dfa_events.send(self.translate_to_debug(&dfa_graph, &sig_set)).unwrap();
+        dfa_events.send(real_self.translate_to_debug(&dfa_graph, &sig_set)).unwrap();
     }
-    let mut trans_table = vec![vec![0;self.rules.symbol_set.length];dfa_graph.node_count()];
+    let mut trans_table = vec![vec![0;real_self.rules.symbol_set.length];dfa_graph.node_count()];
     let mut accepting_states = HashSet::new();
     for node in dfa_graph.node_indices() {
         for edge in dfa_graph.edges_directed(node,Outgoing) {
             trans_table[node.index()][*edge.weight() as usize] = edge.target().index();
         }
         //Checks if empty string set is a member of minkids or an ancestor of it
-        if self.check_if_ancestor(&dfa_graph[node].minkids, self.ss_idx_to_link[0]) {
+        if real_self.check_if_ancestor(&dfa_graph[node].read().unwrap().minkids, real_self.ss_idx_to_link[0]) {
             accepting_states.insert(node.index());
         }
     }
@@ -415,7 +424,7 @@ impl Solver for MinkidSolver {
         state_transitions : trans_table,
         accepting_states : accepting_states,
         starting_state : 0,
-        symbol_set : self.rules.symbol_set.clone()
+        symbol_set : real_self.rules.symbol_set.clone()
     }
     }
 }
@@ -582,14 +591,20 @@ impl MinkidSolver {
         modified
     }
     //Call to apply a partial link between two nodes
-    fn partial_link(&mut self, dfa_graph : &mut DiGraph<MKDFAState,SymbolIdx>, sig_set : &Vec<Vec<SymbolIdx>>, connection : &(Vec<SymbolIdx>,Vec<SymbolIdx>), lhs : NodeIndex, rhs : NodeIndex) -> bool{
+    fn partial_link(self : &Arc<Self>, dfa_graph : &DiGraph<RwLock<MKDFAState>,SymbolIdx>, sig_set : &Vec<Vec<SymbolIdx>>, connection : &(Vec<SymbolIdx>,Vec<SymbolIdx>), lhs : NodeIndex, rhs : NodeIndex) -> bool{
         //To do this, we need to build an intermediary set of potential minkids that could be provided
         let reversed_graph = petgraph::visit::Reversed(&self.ss_link_graph);
         let mut dfs = Dfs::empty(&reversed_graph);
 
         let mut intermediary_minkids = HashSet::new();
+
+        let temp_lock = dfa_graph[rhs].read().unwrap();
+
+        let rhs_minkids = temp_lock.minkids.clone();
+        
+        drop(temp_lock);
         //For each bottom minkid,
-        for rhs_minkid in &dfa_graph[rhs].minkids {
+        for rhs_minkid in &rhs_minkids {
             //Build a list of minkids that are ancestors of the rhs_minkid and possess a ss element that complies with the obligation
             dfs.move_to(*rhs_minkid);
             while let Some(nx) = dfs.next(&reversed_graph) {
@@ -621,10 +636,10 @@ impl MinkidSolver {
                 }
             }
         }
-        self.add_set_to_minkids(&mut dfa_graph[lhs].minkids, &intermediary_minkids)
+        self.add_set_to_minkids(&mut dfa_graph[lhs].write().unwrap().minkids, &intermediary_minkids)
     }
 
-    fn add_link(&self, link_graph : &mut DiGraph<(),(Vec<SymbolIdx>,Vec<SymbolIdx>)>, lhs : NodeIndex, rhs : NodeIndex, lhs_obligation : &[SymbolIdx], rhs_obligation : &[SymbolIdx]) -> (bool,bool) {
+    fn add_link(self : &Arc<Self>, link_graph : &mut DiGraph<(),(Vec<SymbolIdx>,Vec<SymbolIdx>)>, lhs : NodeIndex, rhs : NodeIndex, lhs_obligation : &[SymbolIdx], rhs_obligation : &[SymbolIdx]) -> (bool,bool) {
         let mut death_row = vec![];
         let mut should_add = true;
 
@@ -673,10 +688,10 @@ impl MinkidSolver {
         }
         result
     }
-    fn translate_to_debug(&self, dfa_graph : &DiGraph<MKDFAState,SymbolIdx>, sig_set : &Vec<Vec<SymbolIdx>>) -> (DFAStructure,SSStructure) {
+    fn translate_to_debug(&self, dfa_graph : &DiGraph<RwLock<MKDFAState>,SymbolIdx>, sig_set : &Vec<Vec<SymbolIdx>>) -> (DFAStructure,SSStructure) {
         let mut minkids_debug = vec![];
         for node in dfa_graph.node_indices() {
-            minkids_debug.push(self.minkids_to_tt(&sig_set, &dfa_graph[node].minkids));
+            minkids_debug.push(self.minkids_to_tt(&sig_set, &dfa_graph[node].read().unwrap().minkids));
         }
         (DFAStructure::Graph(dfa_graph.map(|_,_| {()}, |_,x|{*x}).clone()),SSStructure::Boolean(minkids_debug))
     }
