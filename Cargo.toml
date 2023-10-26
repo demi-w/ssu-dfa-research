@@ -13,17 +13,4 @@ xml-rs = "0.8.4"
 serde_json = "1.0"
 serde = { version = "1.0.160", features = ["derive"] }
 async-trait = "0.1.73"
-egui = "0.22.0"
-
-
-rfd = "0.12.0"
-eframe = "0.22.0"
 rayon = "1.8.0"
-
-[target.'cfg(not(target_arch = "wasm32"))'.dependencies]
-futures = "0.3.28"
-
-[target.'cfg(target_arch = "wasm32")'.dependencies]
-wasm-bindgen-futures = "0.4"
-web-time = "0.2.0"
-web-sys = "0.3.64"

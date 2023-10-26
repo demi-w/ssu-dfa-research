@@ -5,9 +5,10 @@
 use eframe::egui;
 use egui::plot::Plot;
 
+mod ui;
+use ui::*;
 
-
-use srs_to_dfa::{ui::*, util::Ruleset};
+use srs_to_dfa::util::Ruleset;
 
 #[cfg(target_arch = "wasm32")]
 pub use web_time::Instant;

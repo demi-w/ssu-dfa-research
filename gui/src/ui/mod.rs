@@ -27,7 +27,7 @@ pub use web_time::Instant;
 #[cfg(not(target_arch = "wasm32"))]
 pub use std::time::Instant;
 
-use crate::solver::*;
+use srs_to_dfa::solver::*;
 
 pub enum OpenItem {
     Goal,

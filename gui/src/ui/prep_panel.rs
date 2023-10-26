@@ -2,7 +2,7 @@ use std::{path::PathBuf, sync::mpsc::Sender};
 
 use egui::{Ui, RichText};
 
-use crate::{util::{DFA, Ruleset}, builder::*};
+use srs_to_dfa::{util::{DFA, Ruleset}, builder::*};
 
 use super::{open_file, OpenItem, PathSender, PathReciever, AvailableSolver, Error};
 

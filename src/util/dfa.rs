@@ -1,4 +1,4 @@
-use crate::{SymbolSet, SymbolIdx, wbf_fix};
+use crate::{SymbolSet, SymbolIdx};
 use serde::{Deserialize, Serialize};
 use std::{collections::{HashSet, HashMap}, io::Read};
 use xml::{writer::{EmitterConfig, XmlEvent},reader::EventReader};
@@ -389,28 +389,6 @@ impl DFA {
         let _ = file.write(serde_json::to_string(self).unwrap().as_bytes());
     }
 
-
-    pub fn load_handle(file : rfd::FileHandle) -> (rfd::FileHandle,Result::<Self>) {
-        let contents = wbf_fix(
-            async {
-                let c_raw = file.read().await;
-                let contents = String::from_utf8_lossy(&c_raw[..]);
-                (file, contents.into_owned())
-            }
-            );
-        (contents.0,serde_json::from_str(&contents.1))
-    }
-
-    pub fn jflap_load_handle(file : rfd::FileHandle) -> (rfd::FileHandle, Self) {
-        let contents = wbf_fix(
-            async {
-                let c_raw = file.read().await;
-                let contents = String::from_utf8_lossy(&c_raw[..]);
-                (file, contents.into_owned())
-            }
-            );
-        (contents.0, Self::load_jflap_from_string(&contents.1))
-    }
     //pub fn minify(&mut self) {}
 
     //pub fn one_rule_expand(&self, rules : &Ruleset) -> DFA{ return self.clone()}

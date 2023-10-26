@@ -2,10 +2,9 @@ use std::{sync::mpsc::{Sender,Receiver}, thread::JoinHandle, time::Duration};
 
 use egui::{Ui, Color32, RichText};
 
-use crate::{solver::{DFAStructure, SSStructure, Solver, SubsetSolver, BFSSolver, HashSolver}, util::{DFA, Ruleset, SymbolIdx, SymbolSet}};
-use crate::solver::MinkidSolver;
+use srs_to_dfa::{solver::{DFAStructure,MinkidSolver, SSStructure, Solver, SubsetSolver, BFSSolver, HashSolver}, util::{DFA, Ruleset, SymbolIdx, SymbolSet}};
 
-use crate::ui::{Instant,execute};
+use super::{Instant,execute};
 
 use std::path::PathBuf;
 
@@ -127,7 +126,7 @@ impl DFAConstructor{
                             std::sync::mpsc::TryRecvError::Disconnected => {
                                 if cfg!(target_arch = "wasm32") {
                                     let event = self.dfa_content.as_ref().unwrap();
-                                    self.final_dfa = Some(crate::solver::event_to_dfa(&event.0,&event.1, &self.last_solver.as_ref().unwrap().rules));
+                                    self.final_dfa = Some(srs_to_dfa::solver::event_to_dfa(&event.0,&event.1, &self.last_solver.as_ref().unwrap().rules));
                                 }
                                 self.dfa_reciever = None;
                                 self.has_finished = true;
