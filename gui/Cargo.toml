@@ -2,7 +2,7 @@
 name = "srs_to_dfa_gui"
 version = "1.0.0"
 edition = "2021"
-
+authors = ["Demi Willison <demiwillison@gmail.com>"]
 
 [dependencies]
 egui = {version = "0.22.0"}
