@@ -81,12 +81,12 @@ impl Solver for MinkidSolver {
                         dfa_events : std::sync::mpsc::Sender<(DFAStructure,SSStructure)>, 
                         phase_events : std::sync::mpsc::Sender<std::time::Duration>) -> DFA {
         
-
+    let init_begin_time = Instant::now();
     //graph of connections based on LHS->RHS links for all states
     //Usize is index in trans_table
 
     
-
+    
     let sig_set = &self.rules.symbol_set.build_sig_k(sig_k);
     self.build_ss_link_graph(sig_set);
     let real_self = Arc::new(self);
@@ -97,6 +97,10 @@ impl Solver for MinkidSolver {
     //number of nodes after an iteration.
     //Each iteration only works if there are two lengths -- so we start with two.
     let mut iteration_lens = vec![0,1];
+
+    if is_debug {
+        let _ = phase_events.send(Instant::now() - init_begin_time);
+    }
 
     //While new elements are actually getting added to the DFA
     while iteration_lens[iteration_lens.len() - 2] < iteration_lens[iteration_lens.len() - 1] {

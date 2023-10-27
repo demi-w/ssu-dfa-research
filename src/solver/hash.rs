@@ -48,6 +48,7 @@ impl Solver for HashSolver {
                         is_debug : bool,
                         dfa_events : std::sync::mpsc::Sender<(DFAStructure,SSStructure)>, 
                         phase_events : std::sync::mpsc::Sender<std::time::Duration>) -> DFA {
+        let init_begin_time = Instant::now();
         let sig_set = self.rules.symbol_set.build_sig_k(sig_k);
         
         let mut trans_table : Vec<Vec<usize>> = Vec::new(); //omg it's me !!!
@@ -74,7 +75,9 @@ impl Solver for HashSolver {
             accepting_states.insert(0);
         }
         
-    
+        if is_debug {
+            let _ = phase_events.send(Instant::now() - init_begin_time);
+        }
         while new_boards.len() > 0 {
             if is_debug {
                 dfa_events.send((DFAStructure::Dense(trans_table.clone()),SSStructure::BooleanMap(table_reference.clone()))).unwrap();

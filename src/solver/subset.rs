@@ -67,7 +67,7 @@ impl Solver for SubsetSolver {
         phase_events : std::sync::mpsc::Sender<std::time::Duration>) -> DFA {
 
         
-
+    let init_begin_time = Instant::now();
     //graph of connections based on LHS->RHS links for all states
     //Usize is index in trans_table
     
@@ -100,7 +100,9 @@ impl Solver for SubsetSolver {
 
     
      //while there are still states to process
- 
+    if is_debug {
+        let _ = phase_events.send(Instant::now() - init_begin_time);
+    }
     while last_finished < last_known{
 
         if is_debug {

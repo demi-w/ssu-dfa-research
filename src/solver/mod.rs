@@ -72,7 +72,9 @@ pub trait Solver where Self:Sized + Clone + Send + 'static{
         let mut iterations = 0;
         let phases = Self::get_phases();
         let mut last_len = 0;
-        
+        if let Ok(time) = phase_rx.recv() {
+            println!("Initialization time: {}ms",time.as_millis());
+        }
         while let Ok((partial_dfa, _sig_sets)) = dfa_rx.recv() {
             let mut update_string = format!("Iteration {} | {} states solved, {} new", iterations,partial_dfa.len() ,partial_dfa.len() - last_len);
             last_len = partial_dfa.len();

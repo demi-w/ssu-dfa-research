@@ -62,6 +62,7 @@ impl Solver for BFSSolver {
         dfa_events : Sender<(DFAStructure,SSStructure)>, 
         phase_events : Sender<Duration>) -> DFA 
     {
+        let init_begin_time = Instant::now();
         let sig_set = self.rules.symbol_set.build_sig_k(sig_k);
         let mut trans_table : Vec<Vec<usize>> = Vec::new(); //omg it's me !!!
         let mut table_reference = HashMap::<BitVec,usize>::new();
@@ -89,7 +90,9 @@ impl Solver for BFSSolver {
         if self.goal.contains(&vec![]) {
             accepting_states.insert(0);
         }
-    
+        if is_debug {
+            let _ = phase_events.send(Instant::now() - init_begin_time);
+        }
         while new_boards.len() > 0 {
             if is_debug {
                 dfa_events.send((DFAStructure::Dense(trans_table.clone()),SSStructure::BooleanMap(table_reference.clone()))).unwrap();

@@ -95,14 +95,14 @@ impl DFAConstructor{
             match &self.phase_reciever {
                 Some(k_phase_recv) => match k_phase_recv.try_recv() {
                     Ok(message) => {
-                        if self.phase_content[0].is_empty() {
-                            self.initialization_dur = Some(Instant::now() - self.last_phase_msg);
+                        if let None = self.initialization_dur {
+                            self.initialization_dur = Some(message);
+                        }else {
+                            self.max_duration = message.as_secs_f64().max(self.max_duration);
+                            self.phase_content[self.phase_idx].push(message);
+                            self.phase_idx = (self.phase_idx + 1) % self.last_solver.as_ref().unwrap().solve_type.get_phases().len();
+                            self.last_phase_msg = Instant::now();
                         }
-                        self.max_duration = message.as_secs_f64().max(self.max_duration);
-                        self.phase_content[self.phase_idx].push(message);
-                        self.phase_idx = (self.phase_idx + 1) % self.last_solver.as_ref().unwrap().solve_type.get_phases().len();
-                        self.last_phase_msg = Instant::now();
-                        
                     }
                     Err(_) => {
                         break
@@ -141,9 +141,6 @@ impl DFAConstructor{
                     break;
                 }
             }
-        }
-        if self.has_started && self.phase_content[0].is_empty() {
-            self.initialization_dur = Some(Instant::now() - self.last_phase_msg);
         }
     }
     pub fn update_solve_window(&mut self, ui : &mut Ui) {
@@ -277,7 +274,7 @@ impl DFAConstructor{
 
         self.verify_run = verify_run;
         self.final_dfa = None;
-        
+        self.initialization_dur = None;
         self.phase_idx = 0;
         self.iteration_state_lens.clear();
         self.phase_content = vec![vec![]; solver.get_phases().len()];
