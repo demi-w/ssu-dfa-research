@@ -55,21 +55,21 @@ legacy
 
 BFS perf
 
-![~1500 strings per second](https://github.com/hbgg/ssu-dfa-research/blob/main/assets/BFS%20perf.png?raw=true)
+![~1500 strings per second](https://github.com/demi-w/ssu-dfa-research/blob/main/gui/assets/BFS%20perf.png?raw=true)
 
 Hash perf
 
-![~750 strings per second](https://github.com/hbgg/ssu-dfa-research/blob/main/assets/Hash%20perf.png?raw=true)
+![~750 strings per second](https://github.com/demi-w/ssu-dfa-research/blob/main/gui/assets/Hash%20perf.png?raw=true)
 
 vs. recommended
 
 Minkid perf
 
-![~555000 strings per second](https://github.com/hbgg/ssu-dfa-research/blob/main/assets/Minkid%20perf.png?raw=true)
+![~555000 strings per second](https://github.com/demi-w/ssu-dfa-research/blob/main/gui/assets/Minkid%20perf.png?raw=true)
 
 Subset perf
 
-![~35000 strings per second](https://github.com/hbgg/ssu-dfa-research/blob/main/assets/Subset%20perf.png?raw=true)
+![~35000 strings per second](https://github.com/demi-w/ssu-dfa-research/blob/main/gui/assets/Subset%20perf.png?raw=true)
 
 To highlight the strings deduced per second, my recommended solvers are ~740x faster. Additionally, tasks that take BFS and Hash solvers ~128GB of memory take Minkid and Subset ~40MB. Additionally, BFS is the only implementation that uses multithreading, so that's 16 threads of BFS getting blown out by a single thread of Minkid.
 
