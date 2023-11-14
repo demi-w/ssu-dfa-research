@@ -33,7 +33,43 @@ type File = FileHandle;
 #[cfg(target_arch = "wasm32")]
 use wasm_bindgen_futures;
 
-
+impl PartialOrd for DFA {
+    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
+        let mut stack = vec![(self.starting_state,other.starting_state)];
+        let mut visited = HashSet::new();
+        let mut self_more = false;
+        let mut other_more = false;
+        if self.symbol_set.length != other.symbol_set.length {
+            return None;
+        }
+        visited.insert((self.starting_state,other.starting_state));
+        while let Some(pair) = stack.pop() {
+            if self.accepting_states.contains(&pair.0) != other.accepting_states.contains(&pair.1) {
+                self_more |= self.accepting_states.contains(&pair.0);
+                other_more |= other.accepting_states.contains(&pair.1);
+                if self_more && other_more {
+                    return None;
+                }
+            }
+            for i in 0..self.symbol_set.length {
+                let test = (self.state_transitions[pair.0][i],other.state_transitions[pair.1][i]);
+                if !visited.contains(&test) {
+                    visited.insert(test.clone());
+                    stack.push(test);
+                }
+            }
+        }
+        if !self_more && !other_more {
+            Some(std::cmp::Ordering::Equal)
+        } else if self_more && !other_more {
+            Some(std::cmp::Ordering::Greater)
+        } else if !self_more && other_more {
+            Some(std::cmp::Ordering::Less)
+        } else {
+            None
+        }
+    }
+}
 
 impl DFA {
 
