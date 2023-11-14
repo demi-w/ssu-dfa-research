@@ -71,6 +71,21 @@ impl PartialOrd for DFA {
     }
 }
 
+impl std::ops::Not for &DFA{
+    type Output = DFA;
+    fn not(self) -> Self::Output {
+        let mut clone = self.clone();
+        let mut inverted_accepting_states = HashSet::new();
+        for i in 0..self.state_transitions.len() {
+            if !self.accepting_states.contains(&i) {
+                inverted_accepting_states.insert(i);
+            }
+        }
+        clone.accepting_states = inverted_accepting_states;
+        clone
+    }
+}
+
 impl DFA {
 
     pub fn expand_to_symset(&mut self, expanded_ss : SymbolSet) {

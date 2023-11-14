@@ -3,7 +3,7 @@ use std::{sync::mpsc::{Sender, Receiver, channel}, collections::{HashMap, HashSe
 
 use std::thread;
 
-use crate::util::{Ruleset, DFA, SymbolIdx, SymbolSet};
+use crate::{util::{Ruleset, DFA, SymbolIdx, SymbolSet}, test};
 
 pub use self::events::*;
 mod events;
@@ -307,6 +307,9 @@ pub trait Solver where Self:Sized + Clone + Send + 'static{
             }
         }
         Ok(())
+    }
+    fn is_subset(&self, test_dfa : &DFA) -> bool {
+        true
     }
 }
 
