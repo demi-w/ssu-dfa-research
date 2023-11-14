@@ -295,12 +295,15 @@ pub trait Solver where Self:Sized + Clone + Send + 'static{
         }
         rule_graph
     }
-    fn is_superset(&self, test_dfa : &DFA) -> Result<(),(RuleGraphRoot,usize,usize)> {
-        println!("verbal reminder that this currently assumes that test_dfa >= self.get_goal()");
+    fn is_superset(&self, test_dfa : &DFA) -> Result<(),Option<(RuleGraphRoot,usize,usize)>> {
+        //println!("verbal reminder that this currently assumes that test_dfa >= self.get_goal()");
+        if !(test_dfa >= self.get_goal()) {
+            return Err(None)
+        }
         let rule_graph = self.build_rule_graph(test_dfa);
         for edge in rule_graph.edge_references() {
             if !test_dfa.accepting_states.contains(&edge.source().index()) && test_dfa.accepting_states.contains(&edge.target().index()) {
-                return Err((edge.weight().clone(),edge.source().index(),edge.target().index()));
+                return Err(Some((edge.weight().clone(),edge.source().index(),edge.target().index())));
             }
         }
         Ok(())
