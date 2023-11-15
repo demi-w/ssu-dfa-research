@@ -1,5 +1,5 @@
 
-use std::{sync::mpsc::{Sender, Receiver, channel}, collections::{HashMap, HashSet}, io::{self, Write}};
+use std::{sync::mpsc::{Sender, Receiver, channel}, collections::{HashMap, HashSet, VecDeque}, io::{self, Write}};
 
 use std::thread;
 
@@ -308,8 +308,164 @@ pub trait Solver where Self:Sized + Clone + Send + 'static{
         }
         Ok(())
     }
-    fn is_subset(&self, test_dfa : &DFA) -> bool {
-        true
+    fn build_no_rule_dfa(&self) -> DFA {
+        if self.get_ruleset().rules.contains_key(&vec![]) {
+            DFA {
+                accepting_states : HashSet::new(),
+                starting_state : 0,
+                state_transitions : vec![vec![0;self.get_goal().symbol_set.length]],
+                symbol_set : self.get_goal().symbol_set.clone(),
+            }
+        } else {
+            let mut state_buffers : Vec<Vec<SymbolIdx>> = vec![vec![SymbolIdx::MAX],vec![]];
+            
+            let mut state_transitions = vec![vec![0;self.get_goal().symbol_set.length];2];
+            let mut last_states = 1;
+            while last_states != state_transitions.len() {
+                let old_states = last_states;
+                last_states = state_transitions.len();
+                for new_state in old_states..state_transitions.len() {
+                    
+                    for new_buffer_sym in 0..self.get_goal().symbol_set.length {
+                        let mut new_buffer = state_buffers[new_state].clone();
+                        let mut perfect_match_found = false;
+                        let mut match_found = false;
+                        new_buffer.push(new_buffer_sym as SymbolIdx);
+                        
+                        //If any group of our last characters is the lhs side of a rule, then obviously a rule can be performed
+                        //I.e. if buffer is 1,1,0,0,2
+                        //we check 1,1,0,0,2 & 1,0,0,2 & 0,0,2 & 0,2 & 2
+                        for i in 0..new_buffer.len() {
+
+                            if self.get_ruleset().rules.contains_key(&new_buffer[i..]) {
+                                state_transitions[new_state][new_buffer_sym] = 0;
+                                perfect_match_found = true;
+                                break;
+                            }
+                        } 
+                        if perfect_match_found {
+                            continue;
+                        }
+                        //If there's not, we strip the buffer of any characters that we know will not be used as lhs
+                        //I.e. if buffer is 2,0,2 we know that first 2 is never used, so buffer should become 0,2
+                        while !match_found {
+                            for (lhs, _) in &self.get_ruleset().rules {
+                                if lhs.len() > new_buffer.len() && lhs[..new_buffer.len()] == new_buffer {
+                                    match_found = true;
+                                    break;
+                                }
+                            }
+                            if !match_found {
+                                new_buffer.remove(0);
+                            }
+                        } 
+                        match_found = false;
+                        for (idx,buffer) in state_buffers.iter().enumerate() {
+                            if &new_buffer == buffer {
+                                match_found = true;
+                                state_transitions[new_state][new_buffer_sym] = idx;
+                                break;
+                            }
+                        }
+                        if !match_found {
+                            state_buffers.push(new_buffer);
+                            state_transitions[new_state][new_buffer_sym] = state_transitions.len();
+                            state_transitions.push(vec![0;self.get_goal().symbol_set.length])
+                        }
+                    }
+                }
+            }
+
+
+            DFA {
+                accepting_states : HashSet::from_iter(1..state_transitions.len()),
+                starting_state : 1,
+                state_transitions : state_transitions,
+                symbol_set : self.get_goal().symbol_set.clone(),
+            }
+
+        }
+
+    }
+    fn build_path_graph(&self, possible_dfa : &DFA) -> Vec<Vec<Path>> {
+        let mut new_paths = vec![(possible_dfa.starting_state, 0)];
+        let mut old_paths = vec![];
+        let mut paths = vec![vec![];possible_dfa.state_transitions.len()];
+        paths[possible_dfa.starting_state].push(Path {buffer : vec![], rhs_connections : vec![],buffer_origin : possible_dfa.starting_state});
+        while !new_paths.is_empty() {
+            std::mem::swap(&mut old_paths, &mut new_paths);
+            for old_path in &old_paths {
+                for symbol in 0..possible_dfa.symbol_set.length {
+                    let mut new_buffer = paths[old_path.0][old_path.1].buffer.clone();
+                    new_buffer.push(symbol as SymbolIdx);
+                    let mut new_path = Path {buffer : new_buffer, rhs_connections : vec![], buffer_origin : paths[old_path.0][old_path.1].buffer_origin};
+                    
+                    //Follow all old pure links
+                    for old_rhs_connection in &paths[old_path.0][old_path.1].rhs_connections {
+                        let new_connection = possible_dfa.state_transitions[*old_rhs_connection][symbol];
+                        if !new_path.rhs_connections.contains(&new_connection) {
+                            new_path.rhs_connections.push(new_connection)
+                        }
+                    }
+
+                   
+
+                   
+
+                    
+                    //If any group of our buffer is the lhs side of a rule, then obviously a rule can be performed
+                    //I.e. if buffer is 1,1,0,0,2
+                    //we check 1,1,0,0,2 & 1,0,0,2 & 0,0,2 & 0,2 & 2
+                    for i in 0..new_path.buffer.len() {
+
+                        //If a buffer matches a left-hand side, determine all rhs states could be reached by the origin + buffer after a single rule application
+                        match self.get_ruleset().rules.get(&new_path.buffer[i..]) {
+                            Some(rhs_list) => {
+                                //Find where the origin where the lhs substring would begin
+                                let mut relevant_origin = paths[old_path.0][old_path.1].buffer_origin;
+                                for j in 0..i {
+                                    relevant_origin = possible_dfa.state_transitions[relevant_origin][new_path.buffer[j] as usize];
+                                }
+                                for rhs in rhs_list {
+                                    let mut rhs_end_idx = relevant_origin;
+                                    for rhs_element in rhs {
+                                        rhs_end_idx = possible_dfa.state_transitions[rhs_end_idx][*rhs_element as usize];
+                                    }
+                                    if !new_path.rhs_connections.contains(&rhs_end_idx) {
+                                        new_path.rhs_connections.push(rhs_end_idx);
+                                    }
+                                }
+                            }
+                            None => {}
+                        }
+                    } 
+                    //We strip the buffer of any characters that we know will not be used as lhs
+                    //I.e. if buffer is 2,0,2 we know that first 2 is never used, so buffer should become 0,2
+                    let mut match_found = false;
+                    while !match_found {
+                        for (lhs, _) in &self.get_ruleset().rules {
+                            //is the whole buffer relevant as the of the lhs of a rule?
+                            if lhs.len() > new_path.buffer.len() && lhs[..new_path.buffer.len()] == new_path.buffer {
+                                match_found = true;
+                                break;
+                            }
+                        }
+                        if !match_found {
+                            //Move 
+                            let unnecesary_char = new_path.buffer.remove(0);
+                            new_path.buffer_origin = possible_dfa.state_transitions[new_path.buffer_origin][unnecesary_char as usize];
+                        }
+                    }
+                    //Find where this path would be added
+                    let dest_idx = possible_dfa.state_transitions[old_path.0][symbol];
+                    if !paths[dest_idx].contains(&new_path) {
+                        new_paths.push((dest_idx,paths[dest_idx].len()));
+                        paths[dest_idx].push(new_path);
+                    }
+                }
+            }
+        }
+        vec![]
     }
 }
 
@@ -477,4 +633,11 @@ impl DomainError {
         }
         result
     }
+}
+
+#[derive(PartialEq,Eq,Clone)]
+pub struct Path {
+    buffer : Vec<SymbolIdx>,
+    rhs_connections : Vec<usize>,
+    buffer_origin : usize
 }
