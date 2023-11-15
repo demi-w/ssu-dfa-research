@@ -86,7 +86,74 @@ impl std::ops::Not for &DFA{
     }
 }
 
+impl std::ops::BitAnd for &DFA {
+    type Output = DFA;
+
+    fn bitand(self, rhs: Self) -> Self::Output {
+        self.dfa_product(rhs, [[false,false],[false,true]])
+    }
+}
+impl std::ops::BitOr for &DFA {
+    type Output = DFA;
+
+    fn bitor(self, rhs: Self) -> Self::Output {
+        self.dfa_product(rhs, [[false,true],[true,true]])
+    }
+}
+impl std::ops::BitXor for &DFA {
+    type Output = DFA;
+
+    fn bitxor(self, rhs: Self) -> Self::Output {
+        self.dfa_product(rhs, [[false,true],[true,false]])
+    }
+}
+
+impl std::ops::Sub for &DFA {
+    type Output = DFA;
+
+    fn sub(self, rhs: Self) -> Self::Output {
+        self.dfa_product(rhs, [[false,false],[true,false]])
+    }
+}
+
 impl DFA {
+
+    pub fn dfa_product(&self, other : &DFA, accepting_table : [[bool;2];2]) -> Self {
+        let mut stored_idxs = vec![(self.starting_state,other.starting_state)];
+        let mut transition_table = vec![];
+        let mut accepting_states = HashSet::new();
+        if accepting_table[self.accepting_states.contains(&self.starting_state) as usize][other.accepting_states.contains(&other.starting_state) as usize] {
+            accepting_states.insert(0);
+        }
+        while stored_idxs.len() > transition_table.len() {
+            for new_state_idx in transition_table.len()..stored_idxs.len() {
+                transition_table.push(vec![0;self.symbol_set.length]);
+                for symbol in 0..self.symbol_set.length {
+                    let new_self_idx = self.state_transitions[stored_idxs[new_state_idx].0][symbol];
+                    let new_other_idx = other.state_transitions[stored_idxs[new_state_idx].1][symbol];
+                    let new_pair = (new_self_idx, new_other_idx);
+                    match stored_idxs.iter().position(|f| f == &new_pair) {
+                        Some(pos) => {
+                            transition_table.last_mut().unwrap()[symbol] = pos;
+                        }
+                        None =>  {
+                            if accepting_table[self.accepting_states.contains(&new_pair.0) as usize][other.accepting_states.contains(&new_pair.1) as usize] {
+                                accepting_states.insert(stored_idxs.len());
+                            }
+                            transition_table.last_mut().unwrap()[symbol] = stored_idxs.len();
+                            stored_idxs.push(new_pair);
+                        }
+                    }
+                }
+            }
+        }
+        DFA {
+            accepting_states : accepting_states,
+            starting_state : 0,
+            state_transitions : transition_table,
+            symbol_set : self.symbol_set.clone()
+        }
+    }
 
     pub fn expand_to_symset(&mut self, expanded_ss : SymbolSet) {
 
