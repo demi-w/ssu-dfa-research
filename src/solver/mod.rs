@@ -1,5 +1,5 @@
 
-use std::{sync::mpsc::{Sender, Receiver, channel}, collections::{HashMap, HashSet, VecDeque}, io::{self, Write}};
+use std::{sync::mpsc::{Sender, Receiver, channel}, collections::{HashMap, HashSet, VecDeque}, io::{self, Write}, path};
 
 use std::thread;
 
@@ -391,14 +391,18 @@ pub trait Solver where Self:Sized + Clone + Send + 'static{
         let mut new_paths = vec![(possible_dfa.starting_state, 0)];
         let mut old_paths = vec![];
         let mut paths = vec![vec![];possible_dfa.state_transitions.len()];
-        paths[possible_dfa.starting_state].push(Path {buffer : vec![], rhs_connections : vec![],buffer_origin : possible_dfa.starting_state});
+        paths[possible_dfa.starting_state].push(Path {buffer : vec![], rhs_connections : vec![],buffer_origin : possible_dfa.starting_state, goal_state : self.get_goal().starting_state});
         while !new_paths.is_empty() {
             std::mem::swap(&mut old_paths, &mut new_paths);
+            new_paths.clear();
             for old_path in &old_paths {
                 for symbol in 0..possible_dfa.symbol_set.length {
                     let mut new_buffer = paths[old_path.0][old_path.1].buffer.clone();
                     new_buffer.push(symbol as SymbolIdx);
-                    let mut new_path = Path {buffer : new_buffer, rhs_connections : vec![], buffer_origin : paths[old_path.0][old_path.1].buffer_origin};
+
+                    let  new_goal_state = self.get_goal().state_transitions[paths[old_path.0][old_path.1].goal_state][symbol];
+
+                    let mut new_path = Path {buffer : new_buffer, rhs_connections : vec![], buffer_origin : paths[old_path.0][old_path.1].buffer_origin, goal_state : new_goal_state};
                     
                     //Follow all old pure links
                     for old_rhs_connection in &paths[old_path.0][old_path.1].rhs_connections {
@@ -409,10 +413,6 @@ pub trait Solver where Self:Sized + Clone + Send + 'static{
                     }
 
                    
-
-                   
-
-                    
                     //If any group of our buffer is the lhs side of a rule, then obviously a rule can be performed
                     //I.e. if buffer is 1,1,0,0,2
                     //we check 1,1,0,0,2 & 1,0,0,2 & 0,0,2 & 0,2 & 2
@@ -465,7 +465,29 @@ pub trait Solver where Self:Sized + Clone + Send + 'static{
                 }
             }
         }
-        vec![]
+        paths
+    }
+    fn is_correct(&self, possible_dfa : &DFA) -> bool {
+        //If there are strings that don't match the goal dfa with no rules
+        //That aren't rejected by the possible dfa
+        if self.is_superset(&possible_dfa).is_err() {
+            return false
+        }
+        if !(&self.build_no_rule_dfa() - self.get_goal() < !possible_dfa) {
+            //Throw the whole thing out!
+            return false
+        }
+        let path_graph = self.build_path_graph(possible_dfa);
+        for (state_idx,state_paths) in path_graph.iter().enumerate() {
+            if possible_dfa.accepting_states.contains(&state_idx) {
+                for path in state_paths {
+                    if !self.get_goal().accepting_states.contains(&path.goal_state) && path.rhs_connections.iter().all(|f| !possible_dfa.accepting_states.contains(f)) {
+                        return false
+                    }
+                }
+            }
+        }
+        true
     }
 }
 
@@ -639,5 +661,6 @@ impl DomainError {
 pub struct Path {
     buffer : Vec<SymbolIdx>,
     rhs_connections : Vec<usize>,
-    buffer_origin : usize
+    buffer_origin : usize,
+    goal_state : usize
 }
