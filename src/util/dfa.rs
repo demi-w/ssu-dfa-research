@@ -118,6 +118,77 @@ impl std::ops::Sub for &DFA {
 
 impl DFA {
 
+    pub fn minimize(&mut self) {
+
+        let mut new_partition_membership = vec![0;self.state_transitions.len()];
+        let mut old_partition_membership = vec![0;self.state_transitions.len()];
+        let mut new_partitions : Vec<Vec<usize>> = vec![vec![],vec![]];
+        let mut old_partitions = vec![];
+        for i in 0..self.state_transitions.len() {
+            let idx = self.accepting_states.contains(&i) as usize;
+            new_partition_membership[i] = idx;
+            new_partitions[idx].push(i)
+        }
+        
+
+        while new_partitions.len() > old_partitions.len() {
+            std::mem::swap(&mut old_partitions, &mut new_partitions);
+            std::mem::swap(&mut old_partition_membership, &mut new_partition_membership);
+            new_partitions.clear();
+            for partition in &old_partitions {
+                if partition.len() == 1 {
+                    new_partition_membership[partition[0]] = new_partitions.len();
+                    new_partitions.push(partition.clone());
+                    continue
+                }
+                let mut truth_vals : Vec<Vec<usize>> = vec![];
+                let mut split_partitions : Vec<Vec<usize>> = vec![];
+                for state in partition {
+                    let mut truth_val = vec![0;self.symbol_set.length];
+                    for symbol in 0..self.symbol_set.length {
+                        truth_val[symbol] = old_partition_membership[self.state_transitions[*state][symbol]];
+                    }
+                    let mut match_found = false;
+                    for tv_idx in 0..truth_vals.len() {
+                        if truth_val == truth_vals[tv_idx] {
+                            split_partitions[tv_idx].push(*state);
+                            new_partition_membership[*state] = new_partitions.len() + tv_idx;
+                            match_found = true;
+                            break;
+                        }
+                    }
+                    if !match_found {
+                        new_partition_membership[*state] = new_partitions.len() + truth_vals.len();
+                        truth_vals.push(truth_val);
+                        split_partitions.push(vec![*state]);
+                    }
+                }
+                new_partitions.append(&mut split_partitions);
+            }
+        }
+        let mut new_accepting = HashSet::new();
+        for (p_index, partition) in new_partitions.iter().enumerate() {
+            if self.accepting_states.contains(&partition[0]) {
+                new_accepting.insert(p_index);
+            }
+        }
+
+        self.starting_state = new_partition_membership[self.starting_state];
+        let mut new_transition_table = vec![];
+
+        for partition in new_partitions {
+            let mut new_transitions = vec![0;self.symbol_set.length];
+            for symbol in 0..self.symbol_set.length {
+                new_transitions[symbol] = new_partition_membership[self.state_transitions[partition[0]][symbol]];
+            }
+            
+            new_transition_table.push(new_transitions);
+        }
+        self.state_transitions = new_transition_table;
+        self.accepting_states = new_accepting;
+
+    }
+
     pub fn dfa_product(&self, other : &DFA, accepting_table : [[bool;2];2]) -> Self {
         let mut stored_idxs = vec![(self.starting_state,other.starting_state)];
         let mut transition_table = vec![];
