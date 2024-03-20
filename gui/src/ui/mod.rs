@@ -86,8 +86,8 @@ fn open_file(target : OpenItem, file_s: Sender<(String,FileHandle,OpenItem)>) {
 
 //TODO: Spawn a new thread here to dramatically improve responsiveness
 #[cfg(not(target_arch = "wasm32"))]
-pub fn execute<F: std::future::Future<Output = ()> + 'static>(f: F) {
-    futures::executor::block_on(f);
+pub fn execute<F: std::future::Future<Output = ()> + 'static + Send>(f: F) {
+    //std::thread::spawn(f);
 }
 
 #[cfg(target_arch = "wasm32")]
