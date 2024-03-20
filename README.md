@@ -82,3 +82,18 @@ No, as the solver is run on a different thread, and summary information is simpl
 # What do you hope to do with this?
 
 Initially, this was just my CS496 Senior Thesis project, however my professor and I both wanted to take it further (even though I've graduated!). We're planning to submit this work to automata conferences ~Summer 2024.
+
+# Installation
+
+Install rust (if you don't already have it)
+```
+curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
+```
+
+Compile from source
+```
+git clone https://github.com/demi-w/ssu-dfa-research.git
+cd ssu-dfa-research
+cd gui
+cargo run --release
+```
