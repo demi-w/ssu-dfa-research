@@ -1,5 +1,5 @@
 
-use std::{sync::mpsc::{Sender, Receiver, channel}, collections::{HashMap, HashSet, VecDeque}, io::{self, Write}, path};
+use std::{collections::{HashMap, HashSet, VecDeque}, fmt::write, hash::Hash, io::{self, Write}, path::{self, Display}, sync::mpsc::{channel, Receiver, Sender}};
 
 use std::thread;
 
@@ -251,38 +251,59 @@ pub trait Solver where Self:Sized + Clone + Send + 'static{
             }
         }
     }
-
-    fn build_rule_graph(&self, possible_dfa : &DFA) -> DiGraph::<usize,RuleGraphRoot> {
+    fn build_rule_graph<'a>(&'a self, possible_dfa : &'a DFA) -> DiGraph::<usize,RuleGraphRoot> {
         let mut rule_graph = DiGraph::<usize,RuleGraphRoot>::new();
-
+        //Add a node in the rule graph for each state
         for index in 0..possible_dfa.state_transitions.len() {
             rule_graph.add_node(index);
         }
-        for origin in 0..possible_dfa.state_transitions.len() {
-            for rule_list in &self.get_ruleset().rules {
+        //See what single rule applications are possible when starting from any state in the DFA
+        //Example -- create a path between (q0, 110) and (q0,001) if one does not exist
+        for origin in 0..possible_dfa.state_transitions.len() { //For each state
+            for rule_list in &self.get_ruleset().rules { //For each rule
                 let lhs = rule_list.0;
+                //Drawing an arrow from LHS to RHS
+                //State at LHS = parent
+                //State at RHS = child
+
+                //Determine the state the LHS goes to from the origin (e.g. (q0, 110))
                 let mut parent = origin;
                 for i in 0..lhs.len() {
                     parent = possible_dfa.state_transitions[parent][lhs[i] as usize];
                 }
+                //Multiple rhs for one lhs is possible, this accomodates for that
                 for rhs in rule_list.1 {
                     let mut child = origin;
-
+                    //Determine the state the RHS goes to from the origin (e.g. (q0,001))
                     for i in 0..rhs.len() {
                         child = possible_dfa.state_transitions[child][rhs[i] as usize];
                     }
-                    rule_graph.update_edge(NodeIndex::new(parent),NodeIndex::new(child),RuleGraphRoot::new(lhs.clone(),rhs.clone(),parent,child,origin));
+                    //update_edge adds an edge if one does not already exist
+                    rule_graph.update_edge(NodeIndex::new(parent),NodeIndex::new(child),RuleGraphRoot::new(lhs.clone(),rhs.clone(),parent,child,origin, &possible_dfa.symbol_set));
                 }
             }  
         }
-        // After establishing the starting points of all links, extend those links outward.
+        //Now we have built all single rule applications where the LHS and RHS are the last N characters of the strings they belong to
+        //e.g. (q0, 110) -> (q0,001)
+        //But there should still be a connection using these rules, even if the LHS and RHS are not the last characters used
+        //e.g. (q0, 1101) -> (q0, 0011)
+        //The code below performs those additions
         let mut old_len = 0;
-        while old_len < rule_graph.edge_count() {
+        //If there are no new edges since the last time, there are no new possible edges
+        //as the code would run the exact same as last time, and not add anything
+        while old_len < rule_graph.edge_count() { 
             let new_len = rule_graph.edge_count();
+            //Iterating through all of the new edges (this is not endorsed by petgraph as a method, but it works 100% of the time)
             for edge_idx in old_len..new_len {
+                //the weight is the metadata related to the path
                 let old_weight = rule_graph.raw_edges()[edge_idx].weight.clone();
                 let old_parent = rule_graph[rule_graph.raw_edges()[edge_idx].source()];
                 let old_child = rule_graph[rule_graph.raw_edges()[edge_idx].target()];
+
+                //For each symbol after the old LHS and RHS state, check to see if adding one symbol to both adds a new path
+                //e.g. If the old rule is (q0,x) -> (q0,y)
+                //then we add the edges (q0, x0) -> (q0, y0), (q0,x1) -> (q0, y1)
+                //x0/y0 is concatenated, e.g. if x = 100 then x0 = 1001
                 for sym in 0..self.get_ruleset().symbol_set.length {
                     let new_parent = possible_dfa.state_transitions[old_parent][sym as usize];
                     let new_child = possible_dfa.state_transitions[old_child][sym as usize];
@@ -295,8 +316,8 @@ pub trait Solver where Self:Sized + Clone + Send + 'static{
         }
         rule_graph
     }
-    fn is_superset(&self, test_dfa : &DFA) -> Result<(),Option<(RuleGraphRoot,usize,usize)>> {
-        //println!("verbal reminder that this currently assumes that test_dfa >= self.get_goal()");
+    fn is_superset<'a>(&'a self, test_dfa : &'a DFA) -> Result<(),Option<(RuleGraphRoot,usize,usize)>> {
+
         if !(test_dfa >= self.get_goal()) {
             return Err(None)
         }
@@ -408,7 +429,8 @@ pub trait Solver where Self:Sized + Clone + Send + 'static{
                     for old_rhs_connection in &paths[old_path.0][old_path.1].rhs_connections {
                         let new_connection = possible_dfa.state_transitions[*old_rhs_connection][symbol];
                         if !new_path.rhs_connections.contains(&new_connection) {
-                            new_path.rhs_connections.push(new_connection)
+                            new_path.rhs_connections.push(new_connection);
+                            new_path.rhs_connections.sort();
                         }
                     }
 
@@ -433,6 +455,7 @@ pub trait Solver where Self:Sized + Clone + Send + 'static{
                                     }
                                     if !new_path.rhs_connections.contains(&rhs_end_idx) {
                                         new_path.rhs_connections.push(rhs_end_idx);
+                                        new_path.rhs_connections.sort();
                                     }
                                 }
                             }
@@ -467,21 +490,49 @@ pub trait Solver where Self:Sized + Clone + Send + 'static{
         }
         paths
     }
+    //I'm hoping to give more nuanced proofs/proof failures soon
+    //An audit trail (maybe integrated with that massive excel sheet I made) would be ideal
     fn is_correct(&self, possible_dfa : &DFA) -> bool {
-        //If there are strings that don't match the goal dfa with no rules
-        //That aren't rejected by the possible dfa
-        if self.is_superset(&possible_dfa).is_err() {
-            return false
-        }
-        if !(&self.build_no_rule_dfa() - self.get_goal() < !possible_dfa) {
+
+        let no_rule_dfa = self.build_no_rule_dfa();
+        //If the set of terminal strings is not correct in the possible_dfa
+        if &no_rule_dfa & self.get_goal() != &no_rule_dfa & possible_dfa {
             //Throw the whole thing out!
             return false
         }
-        let path_graph = self.build_path_graph(possible_dfa);
+        //Make sure that terminal states have their own state associated with them.
+        let expanded_dfa = possible_dfa.dfa_product(&no_rule_dfa, [[false,false],[true,true]]);
+
+        //Ensure that there are no cycles in the DFA (if they exist, proof fails & it is guaranteed that DFA is not minimal)
+        let rule_graph = self.build_rule_graph(&expanded_dfa);
+        if petgraph::algo::is_cyclic_directed(&rule_graph) {
+            return false
+        }
+
+
+        let path_graph = self.build_path_graph(&expanded_dfa);
+
+
+        //Because we only care about whether or not there's a single issue, the ordering of the proof doesn't matter
+        //All states can assume that the others are all correct -- if one fails, it's not correct either way
+        //And if all are correct, then we right to do it in an unordered fashion
         for (state_idx,state_paths) in path_graph.iter().enumerate() {
-            if possible_dfa.accepting_states.contains(&state_idx) {
+            //If the state is supposed to be accepting
+            if expanded_dfa.accepting_states.contains(&state_idx) {
                 for path in state_paths {
-                    if !self.get_goal().accepting_states.contains(&path.goal_state) && path.rhs_connections.iter().all(|f| !possible_dfa.accepting_states.contains(f)) {
+                    
+                    if !self.get_goal().accepting_states.contains(&path.goal_state) //If the path is not a part of the goal regex
+                       && path.rhs_connections.iter().all(|f| *f != state_idx) //And the path is not looping
+                       && path.rhs_connections.iter().all(|f| !expanded_dfa.accepting_states.contains(f)) //And can only go to provably rejecting strings
+                       {
+                        return false
+                    }
+                }
+            } else {
+                for path in state_paths {
+                    if self.get_goal().accepting_states.contains(&path.goal_state) || //If the path is a part of the goal regex
+                       path.rhs_connections.iter().any(|f|  expanded_dfa.accepting_states.contains(f)) //or can go to an accepting state
+                    {
                         return false
                     }
                 }
@@ -489,34 +540,406 @@ pub trait Solver where Self:Sized + Clone + Send + 'static{
         }
         true
     }
+    
+    fn correct_audit<'a>(&self, possible_dfa : &DFA, emit_steps : bool) -> ProofAudit {
+
+        //Make sure that all terminal states have their own state associated with them.
+        let no_rule_dfa = self.build_no_rule_dfa();
+        let expanded_dfa = possible_dfa.dfa_product(&no_rule_dfa, [[false,false],[true,true]]);
+
+        let path_graph = self.build_path_graph(&expanded_dfa);
+
+        let mut audit = ProofAudit {steps : vec![], properties : vec![]};
+
+        //Add in all of the states into our proof
+        for i in 0..expanded_dfa.state_transitions.len() {
+            audit.add_step(ProofStep{
+                element : ProofElement::State(i), 
+                sources : HashSet::new(), 
+                reason: ProofStepRationale::Assertion
+            }, emit_steps);
+        }
+        //Record nature of all accepting states
+        audit.add_step(ProofStep{
+            element : ProofElement::AddProperty(ProofProperty::Accepting(true), expanded_dfa.accepting_states.clone().into_iter().collect()), 
+            sources : HashSet::new(), 
+            reason: ProofStepRationale::Assertion
+        }, emit_steps);
+
+        //Record nature of all rejecting states
+        audit.add_step(ProofStep{
+            element : ProofElement::AddProperty(ProofProperty::Accepting(false), HashSet::from_iter(0..expanded_dfa.state_transitions.len()).difference(&expanded_dfa.accepting_states).into_iter().cloned().collect()), 
+            sources : HashSet::new(), 
+            reason: ProofStepRationale::Assertion
+        }, emit_steps);
+
+        //Add in all of the paths into our proof
+        for i in 0..expanded_dfa.state_transitions.len() {
+            for path in &path_graph[i] {
+                let mut sources_set = HashSet::from_iter(path.rhs_connections.clone());
+                sources_set.insert(i);
+                //The path graph produces what would be considered duplicates in this context. This is to make sure no duplicates exist
+                if let None = audit.find_element(ProofElement::Path(i, path.rhs_connections.clone())){
+                    audit.add_step(ProofStep{ 
+                        reason : ProofStepRationale::Assertion, 
+                        element : ProofElement::Path(i, path.rhs_connections.clone()), 
+                        sources : sources_set
+                    }, emit_steps);
+                    //Add rejecting/accepting nature into proof (technically, this isn't an assertion, but w/e)
+                    audit.add_step(ProofStep{ 
+                        reason : ProofStepRationale::Assertion, 
+                        element : ProofElement::AddProperty(ProofProperty::Accepting(expanded_dfa.accepting_states.contains(&i)),vec![audit.len()-1]), 
+                        sources : HashSet::from_iter(vec![i])
+                    }, emit_steps);
+                }
+            }
+        }
+        
+        //Next, find all states that can be proven correct bc they either 1) match the goal regex perfectly or
+        // 2) are terminal, and have no strings that match the goal regex
+        let mut regex_clone = expanded_dfa.clone(); //This is a modifiable version of the DFA used for checking individual states
+        let mut regex_correct_states = vec![]; //This stores a list of all proven states for later
+        for i in 0..expanded_dfa.state_transitions.len() {
+            regex_clone.accepting_states = HashSet::from_iter(vec![i]);
+            //If the state is accepting and all strings in that state are accepted by the goal regex
+            let accepting_correct = expanded_dfa.accepting_states.contains(&i) && &regex_clone <= self.get_goal();
+            //If the state is rejecting, terminal and all strings in that states are not accepted by the goal regex
+            let is_terminal = path_graph[i].iter().all(|f| {f.rhs_connections.len() == 0});
+            let rejecting_correct = is_terminal && !expanded_dfa.accepting_states.contains(&i) && &(self.get_goal() - &regex_clone) == self.get_goal();
+            //&(self.get_goal() - &regex_clone) == self.get_goal() is equivalent to regex_clone.intersection(self.get_goal) == empty_set
+            //But I haven't made an empty set constant for the DFA yet.
+
+            //If the state can be guaranteed correct
+            if accepting_correct || rejecting_correct {
+                regex_correct_states.push(i);
+                //Inform that it's correct
+                audit.add_step(ProofStep {
+                    reason : ProofStepRationale::MatchesRegex, 
+                    element: ProofElement::AddProperty(ProofProperty::Correct, vec![i]),
+                    sources : HashSet::new()
+                }, emit_steps);
+
+                //Inform that all paths are also correct (by virtue of the state being correct)
+                let mut path_idxs = HashSet::new();
+                for path in &path_graph[i] {
+                    path_idxs.insert(audit.find_element(ProofElement::Path(i, path.rhs_connections.clone())).unwrap());
+                }
+                audit.add_step(ProofStep {
+                    reason : ProofStepRationale::EquivalentSet, 
+                    element: ProofElement::AddProperty(ProofProperty::Correct, path_idxs.into_iter().collect()),
+                    sources : HashSet::from_iter(vec![audit.len() - 1])
+                }, emit_steps);
+            }
+        }
+        //The idea here is that when we prove something correct, we check to see if anything can be proven based on that by adding it 
+        //This will then iterate through all provable elements, even if some part of the DFA is unprovable.
+        //We start by getting all paths where at least one of the RHS connections has been proven correct in the previous step.
+        let mut possibly_provable : VecDeque::<ProofIndex> = VecDeque::new();
+        for (state_path_idx, state_paths) in path_graph.iter().enumerate() {
+            for path in state_paths {
+                if path.rhs_connections.iter().any(|f| {regex_correct_states.contains(f)}) {
+                    let path_index = audit.find_element(ProofElement::Path(state_path_idx, path.rhs_connections.clone())).unwrap();
+                    if !possibly_provable.contains(&path_index) {
+                        possibly_provable.push_back(path_index)
+                    }
+                }
+            }
+        }
+
+        while let Some(cur_index) = possibly_provable.pop_back() {
+            //If this has been proven elsewhere, forget about it!
+            if audit.properties[cur_index].contains(&ProofProperty::Correct) {
+                continue;
+            }
+            //If the ProofElement in question is a state
+            if let ProofElement::State(idx) = audit.steps[cur_index].element {
+
+                //The only way a state can be proven is if all constituent paths have been proven.
+                //This section of the code checks to see if all paths have been proven correct.
+
+                //Check which paths have been proven for the state
+                let mut proven_path_idxs = vec![];
+                for path in &path_graph[idx] {
+                    let path_idx = audit.find_element(ProofElement::Path(idx, path.rhs_connections.clone())).unwrap();
+                    if audit.get_props(path_idx).contains(&ProofProperty::Correct) {
+                        proven_path_idxs.push(path_idx);
+                    }else{
+                        break;
+                    }
+                }
+                //If every path for the state has been proven
+                if proven_path_idxs.len() == path_graph[idx].len() {
+                    //Add the fact that the state was proven to the record
+                    audit.add_step(ProofStep {
+                        reason : ProofStepRationale::EquivalentSet, 
+                        element: ProofElement::AddProperty(ProofProperty::Correct, vec![cur_index]),
+                        sources : HashSet::from_iter(proven_path_idxs)
+                    }, emit_steps);
+                    
+                    //Add every path connected to this state to the possibly provable elements
+                    for (state_path_idx, state_paths) in path_graph.iter().enumerate() {
+                        for path in state_paths {
+                            if path.rhs_connections.contains(&idx) {
+                                let path_index = audit.find_element(ProofElement::Path(state_path_idx, path.rhs_connections.clone())).unwrap();
+                                //If it's unproven and not already in the stack
+                                if !audit.get_props(path_index).contains(&ProofProperty::Correct) && !possibly_provable.contains(&path_index) {
+                                    possibly_provable.push_back(path_index)
+                                }
+                            }
+                        }
+                    }
+                }
+            } else if let ProofElement::Path(lhs, rhs_connections) = audit.steps[cur_index].element.clone() {
+                let mut is_proven = false;
+                //There are a couple ways that a state can be correct:
+                // 1. It is accepting, and at least one of the states it can go is provably accepting
+                // 2. It is a rejecting exit path, and it can only go to provably rejecting states
+                // 3. It is an accepting looping path, and all exit paths are correct
+                // 4. It is a rejecting looping path, all exit paths are correct, and all looping paths can only go to provably rejecting states (or itself)
+                
+                //This code's control flow takes advantage of a couple things:
+                // a. 1 can be true for any accepting state (and is simpler to check) so we default to that when possible
+                // b. 4 is simply a more restrictive version of 3
+                // c. if 3. or 4. is proven for one looping path, it will also be true for all unproven looping paths
+
+                //If it is accepting (Checking for 1.)
+                if expanded_dfa.accepting_states.contains(&lhs) {
+                    
+                    //For all states it can go to
+                    for state in &rhs_connections {
+                        let state_props = audit.get_props(*state);
+                        //Are any accepting?
+                        if state_props.contains(&ProofProperty::Correct) && state_props.contains(&ProofProperty::Accepting(true)) {
+                            //If so, add to record and break
+                            is_proven = true;
+                            audit.add_step(ProofStep {
+                                reason : ProofStepRationale::AcceptingExit, 
+                                element: ProofElement::AddProperty(ProofProperty::Correct, vec![cur_index]),
+                                sources : HashSet::from_iter(vec![*state])
+                            }, emit_steps);
+                            break;
+                        }
+                    }
+                } else if !rhs_connections.contains(&lhs) { //If it is a rejecting exit path (Checking for 2.)
+                    let mut proven_rejecting_states = 0;
+                    for state in &rhs_connections {
+                        let state_props = audit.get_props(*state);
+                        if state_props.contains(&ProofProperty::Correct) && state_props.contains(&ProofProperty::Accepting(false)) {
+                            proven_rejecting_states += 1;
+                        } else {
+                            break;
+                        }
+                    }
+                    if proven_rejecting_states == rhs_connections.len() {
+                        audit.add_step(ProofStep {
+                            reason : ProofStepRationale::RejectingExit, 
+                            element: ProofElement::AddProperty(ProofProperty::Correct, vec![cur_index]),
+                            sources : HashSet::from_iter(rhs_connections.clone())
+                        }, emit_steps);
+                        is_proven = true;
+                    }
+                }
+                //If it's an unproven looping path (3. and 4.)
+                if !is_proven && rhs_connections.contains(&lhs) {
+                    let mut exit_paths = 0;
+                    let mut proven_exit_path_idxs = vec![];
+                    let mut unproven_looping_path_idxs = vec![];
+
+                    //Begin analyzing each path in the state
+                    for possible_path in &path_graph[lhs] {
+                        let path_idx = audit.find_element(ProofElement::Path(lhs, possible_path.rhs_connections.clone())).unwrap();
+                        
+                        //If path is an exit path
+                        if !possible_path.rhs_connections.contains(&lhs) {
+                            exit_paths += 1;
+                            if audit.get_props(path_idx).contains(&ProofProperty::Correct) {
+                                proven_exit_path_idxs.push(path_idx);
+                            } else {
+                                break;
+                            }
+                        } else {
+                            //If rejecting, requirement is that it can only go to provably rejecting states & self (Checking for 4.)
+                            if !expanded_dfa.accepting_states.contains(&lhs){
+                                let mut all_provably_rejecting = true;
+                                for possible_rhs in &possible_path.rhs_connections {
+                                    if *possible_rhs == lhs { //Except for itself!
+                                        continue;
+                                    }
+                                    let temp_props = audit.get_props(*possible_rhs);
+                                    all_provably_rejecting &= temp_props.contains(&ProofProperty::Accepting(false));
+                                    all_provably_rejecting &= temp_props.contains(&ProofProperty::Correct);
+                                    if !all_provably_rejecting {
+                                        //Hacky premature exit that guarantees it won't be considered correct
+                                        exit_paths = 0;
+                                        proven_exit_path_idxs.push(0);
+                                        break;
+                                    }
+                                }
+                                if !all_provably_rejecting {
+                                    break;
+                                }
+                            }
+                            if !audit.get_props(path_idx).contains(&ProofProperty::Correct) {
+                                unproven_looping_path_idxs.push(path_idx)
+                            }
+                        }
+                    }
+                    //If all exit paths are proven (Checking for 3.) and our hacky premature exit hasn't occurred (Checking for 4.)
+                    if exit_paths == proven_exit_path_idxs.len() {
+                        is_proven = true;
+                        let reason = if expanded_dfa.accepting_states.contains(&lhs) {
+                            ProofStepRationale::AcceptingLooping
+                        } else {    
+                            ProofStepRationale::RejectingLooping
+                        };
+                        //Add the corresponding path correctness to the record
+                        audit.add_step(ProofStep {
+                            reason : reason, 
+                            element: ProofElement::AddProperty(ProofProperty::Correct, unproven_looping_path_idxs),
+                            sources : HashSet::from_iter(proven_exit_path_idxs)
+                        }, emit_steps);
+                    }
+                }
+                //If we have successfully proven the cur_index path correct, using any means (1.,2.,3., or 4.)
+                if is_proven {
+                    //If it's an exit path, make sure to check the looping paths
+                    if !rhs_connections.contains(&lhs) {
+                        for path in &path_graph[lhs] {
+                            if path.rhs_connections.contains(&lhs) {
+                                possibly_provable.push_back(audit.find_element(ProofElement::Path(lhs, path.rhs_connections.clone())).unwrap());
+                            }
+                        }
+                    }
+                    //Make sure to check to see if all paths in the state have been proven correct because of this
+                    possibly_provable.push_back(lhs);
+                }
+            }
+        }
+        audit
+    }
+
+}
+
+pub struct ProofAudit {
+    steps : Vec<ProofStep>,
+    properties : Vec<HashSet<ProofProperty>>
+}
+
+#[derive(Debug,PartialEq, Eq)]
+enum ProofStepRationale {
+    Assertion,
+    RejectingExit,
+    AcceptingExit,
+    RejectingLooping,
+    AcceptingLooping,
+    EquivalentSet,
+    MatchesRegex
+}
+
+type ProofIndex = usize;
+
+#[derive(Debug,PartialEq, Eq, Clone)]
+enum ProofElement {
+    AddProperty(ProofProperty, Vec<ProofIndex>),
+    RemoveProperty(ProofProperty, Vec<ProofIndex>),
+    State(usize),
+    Path(ProofIndex, Vec<ProofIndex>)
+}
+#[derive(Debug,PartialEq, Eq, Hash, Clone)]
+enum ProofProperty {
+    Accepting(bool),
+    Correct,
+    Coherent(bool)
+}
+
+#[derive(Debug,PartialEq, Eq)]
+struct ProofStep {
+    element : ProofElement,
+    sources : HashSet<ProofIndex>,
+    reason : ProofStepRationale
+}
+
+impl std::fmt::Display for ProofAudit {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        for i in &self.steps {
+            if let ProofElement::AddProperty(ref prop, ref affected) = i.element {
+                write!(f, "Add Property {:?} to ",prop)?;
+                for affect in affected{
+                    write!(f, "{:?}",self.steps[*affect].element)?;
+                    if affect != affected.last().unwrap() {
+                        write!(f, ", ")?;
+                    }
+                }
+                write!(f, " | ")?;
+            } else {
+                write!(f, "{:?} | ",i.element)?;
+            };
+            write!(f,"Using {:?} Rule | Reasons: ",i.reason)?;
+            for source in &i.sources {
+                write!(f, "{:?}, ",self.steps[*source].element)?;
+            }
+            write!(f,"\n")?;
+        }
+        Ok(())
+    }
+}
+
+impl ProofAudit {
+    fn add_step(&mut self, proof_step : ProofStep, should_emit : bool) {
+        if let ProofElement::AddProperty(ref prop, ref affected) = proof_step.element {
+            for i in affected {
+                self.properties[*i].insert(prop.clone());
+            }
+        }
+        else if let ProofElement::RemoveProperty(ref prop, ref affected) = proof_step.element {
+            for i in affected {
+                self.properties[*i].remove(prop);
+            }
+        }
+        if should_emit {
+            println!("{:?}",proof_step);
+        }
+        self.steps.push(proof_step);
+        self.properties.push(HashSet::new());
+    }
+    fn len(&self) -> usize {
+        self.steps.len()
+    }
+    fn find_element(&self, desired_element : ProofElement) -> Option<usize> {
+        self.steps.iter().position(|x| {x.element == desired_element})
+    }
+    fn get_props(&self, step_idx : ProofIndex) -> HashSet<ProofProperty> {
+        self.properties[step_idx].clone()
+    }
 }
 
 #[derive(Debug,Clone)]
-pub struct RuleGraphRoot {
-    lhs :Vec<SymbolIdx>,
+pub struct RuleGraphRoot<'a> {
+    lhs : Vec<SymbolIdx>,
     rhs : Vec<SymbolIdx>,
     init_lhs_state : usize,
     init_rhs_state : usize,
-    origin : usize
+    origin : usize,
+    symset : &'a SymbolSet
 }
 
-impl RuleGraphRoot {
-    fn new(lhs :Vec<SymbolIdx>,rhs : Vec<SymbolIdx>,init_lhs_state : usize, init_rhs_state : usize, origin : usize) -> Self {
-        RuleGraphRoot { lhs: lhs, rhs: rhs, init_lhs_state: init_lhs_state, init_rhs_state: init_rhs_state, origin : origin }
+impl<'a> RuleGraphRoot<'a> {
+    fn new(lhs :Vec<SymbolIdx>,rhs : Vec<SymbolIdx>,init_lhs_state : usize, init_rhs_state : usize, origin : usize, symset : &'a SymbolSet) -> Self {
+        RuleGraphRoot { lhs: lhs, rhs: rhs, init_lhs_state: init_lhs_state, init_rhs_state: init_rhs_state, origin : origin, symset : symset }
     }
-    pub fn to_string(&self, symset : &SymbolSet) -> String {
-        let mut result = "".to_owned();
-        result.push_str("LHS ");
-        result.push_str(&symset.symbols_to_string(&self.lhs));
-        result.push_str(" | RHS ");
-        result.push_str(&symset.symbols_to_string(&self.rhs));
-        result.push_str(" | initial LHS state ");
-        result.push_str(&self.init_lhs_state.to_string());
-        result.push_str(" | initial RHS state ");
-        result.push_str(&self.init_rhs_state.to_string());
-        result.push_str(" | origin ");
-        result.push_str(&self.origin.to_string());
-        result
+}
+impl<'a> std::fmt::Display for RuleGraphRoot<'a> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f,"LHS ")?;
+        write!(f, "{}", self.symset.symbols_to_string(&self.lhs))?;
+        write!(f," | RHS ")?;
+        write!(f,"{}",&self.symset.symbols_to_string(&self.rhs))?;
+        write!(f," | initial LHS state ")?;
+        write!(f,"{}",&self.init_lhs_state.to_string())?;
+        write!(f," | initial RHS state ")?;
+        write!(f,"{}",&self.init_rhs_state.to_string())?;
+        write!(f," | origin ")?;
+        write!(f,"{}",&self.origin.to_string())
     }
 }
 
