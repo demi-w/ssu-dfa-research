@@ -1,6 +1,6 @@
 use std::{sync::mpsc::{Receiver, Sender}, fmt::Display};
 use rfd::FileHandle;
-
+use async_std::task;
 mod prep_panel;
 pub use prep_panel::PrepPanel;
 
@@ -87,7 +87,7 @@ fn open_file(target : OpenItem, file_s: Sender<(String,FileHandle,OpenItem)>) {
 //TODO: Spawn a new thread here to dramatically improve responsiveness
 #[cfg(not(target_arch = "wasm32"))]
 pub fn execute<F: std::future::Future<Output = ()> + 'static + Send>(f: F) {
-    //std::thread::spawn(f);
+    task::spawn(f);
 }
 
 #[cfg(target_arch = "wasm32")]
