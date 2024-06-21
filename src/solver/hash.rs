@@ -58,7 +58,7 @@ impl Solver for HashSolver {
     
         let mut old_boards : Vec::<(usize,Vec<SymbolIdx>)> = Vec::new();
     
-        let mut accepting_states : HashSet<usize> = HashSet::new();
+        let mut accepting_states = vec![false;1];
         
 
         let mut empty_copy : Vec<usize> = Vec::new();
@@ -72,7 +72,7 @@ impl Solver for HashSolver {
 
         //redundant bc of start_accepting already checking this but idc
         if self.bfs_solver(&vec![]) {
-            accepting_states.insert(0);
+            accepting_states[0] = true;
         }
         
         if is_debug {
@@ -106,10 +106,7 @@ impl Solver for HashSolver {
                             
                             table_reference.insert(new_board.0.clone(),new_idx);
                             trans_table.push(empty_copy.clone());
-    
-                            if self.bfs_solver(&new_board.1) {
-                                accepting_states.insert(new_idx);
-                            }
+                            accepting_states.push(new_board.0[0]);
                             new_idx
                             }
                         };

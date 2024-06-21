@@ -71,7 +71,7 @@ impl Solver for BFSSolver {
     
         let mut old_boards : Vec::<(usize,Vec<SymbolIdx>)> = Vec::new();
     
-        let mut accepting_states : HashSet<usize> = HashSet::new();
+        let mut accepting_states : Vec<bool> = vec![self.goal.contains(&vec![])];
         
         let thread_translator : Arc<BFSSolver> = Arc::new(self.clone());
 
@@ -87,9 +87,7 @@ impl Solver for BFSSolver {
         trans_table.push(empty_copy.clone());
 
         //redundant bc of start_accepting already checking this but idc
-        if self.goal.contains(&vec![]) {
-            accepting_states.insert(0);
-        }
+        
         if is_debug {
             let _ = phase_events.send(Instant::now() - init_begin_time);
         }
@@ -124,9 +122,7 @@ impl Solver for BFSSolver {
                             table_reference.insert(new_board.0.clone(),new_idx);
                             trans_table.push(empty_copy.clone());
     
-                            if thread_translator.bfs_solver_batch(&new_board.1) {
-                                accepting_states.insert(new_idx);
-                            }
+                            accepting_states.push(thread_translator.bfs_solver_batch(&new_board.1));
                             new_idx
                             }
                         };

@@ -8,6 +8,8 @@ use crate::{util::{Ruleset, DFA, SymbolIdx, SymbolSet}, test};
 pub use self::events::*;
 mod events;
 
+//mod generic_bases;
+
 mod bfs;
 pub use self::bfs::BFSSolver;
 
@@ -271,7 +273,7 @@ pub trait Solver where Self:Sized + Clone + Send + 'static{
                 for i in 0..lhs.len() {
                     parent = possible_dfa.state_transitions[parent][lhs[i] as usize];
                 }
-                //Multiple rhs for one lhs is possible, this accomodates for that
+                //Multiple rhs for one lhs is possible, this accommodates for that
                 for rhs in rule_list.1 {
                     let mut child = origin;
                     //Determine the state the RHS goes to from the origin (e.g. (q0,001))
@@ -323,7 +325,7 @@ pub trait Solver where Self:Sized + Clone + Send + 'static{
         }
         let rule_graph = self.build_rule_graph(test_dfa);
         for edge in rule_graph.edge_references() {
-            if !test_dfa.accepting_states.contains(&edge.source().index()) && test_dfa.accepting_states.contains(&edge.target().index()) {
+            if !test_dfa.accepting_states[edge.source().index()] && test_dfa.accepting_states[edge.target().index()] {
                 return Err(Some((edge.weight().clone(),edge.source().index(),edge.target().index())));
             }
         }
@@ -332,7 +334,7 @@ pub trait Solver where Self:Sized + Clone + Send + 'static{
     fn build_no_rule_dfa(&self) -> DFA {
         if self.get_ruleset().rules.contains_key(&vec![]) {
             DFA {
-                accepting_states : HashSet::new(),
+                accepting_states : Vec::new(),
                 starting_state : 0,
                 state_transitions : vec![vec![0;self.get_goal().symbol_set.length]],
                 symbol_set : self.get_goal().symbol_set.clone(),
@@ -397,9 +399,10 @@ pub trait Solver where Self:Sized + Clone + Send + 'static{
                 }
             }
 
-
+            let mut temp_accepting = vec![true;state_transitions.len()];
+            temp_accepting[0] = false;
             DFA {
-                accepting_states : HashSet::from_iter(1..state_transitions.len()),
+                accepting_states : temp_accepting,
                 starting_state : 1,
                 state_transitions : state_transitions,
                 symbol_set : self.get_goal().symbol_set.clone(),
@@ -409,32 +412,69 @@ pub trait Solver where Self:Sized + Clone + Send + 'static{
 
     }
     fn build_path_graph(&self, possible_dfa : &DFA) -> Vec<Vec<Path>> {
+        let hackLambda = |list : &Vec::<usize>| {
+            let mut start = "[".to_owned();
+            for (idx,i) in list.iter().enumerate() {
+                start.push('q');
+                start.push_str(&i.to_string());
+                if idx+1 < list.len() {
+                    start.push(',');
+                    start.push(' ');
+                }
+                
+            }
+            start.push(']');
+            start
+        };
         let mut new_paths = vec![(possible_dfa.starting_state, 0)];
         let mut old_paths = vec![];
         let mut paths = vec![vec![];possible_dfa.state_transitions.len()];
+        let mut iteration_num = 0;
         paths[possible_dfa.starting_state].push(Path {buffer : vec![], rhs_connections : vec![],buffer_origin : possible_dfa.starting_state, goal_state : self.get_goal().starting_state});
         while !new_paths.is_empty() {
             std::mem::swap(&mut old_paths, &mut new_paths);
             new_paths.clear();
+            println!("# Iteration {}",iteration_num);
+            if iteration_num > 0 {
+                println!("Everything created in Iteration {} will now be tested.",iteration_num-1)
+            } else {
+                println!("We start with the starting state and no buffer.");
+            }
+            
+            iteration_num += 1;
             for old_path in &old_paths {
+                println!("## Testing {{Origin:q{}, Buffer:{:?}, LHS: q{}, RHS: {}}}",paths[old_path.0][old_path.1].buffer_origin,paths[old_path.0][old_path.1].buffer,old_path.0,hackLambda(&paths[old_path.0][old_path.1].rhs_connections));
                 for symbol in 0..possible_dfa.symbol_set.length {
+                    
+                    println!("### On {}:", self.get_goal().symbol_set.representations[symbol]);
                     let mut new_buffer = paths[old_path.0][old_path.1].buffer.clone();
                     new_buffer.push(symbol as SymbolIdx);
-
+                    
+                    
                     let  new_goal_state = self.get_goal().state_transitions[paths[old_path.0][old_path.1].goal_state][symbol];
 
                     let mut new_path = Path {buffer : new_buffer, rhs_connections : vec![], buffer_origin : paths[old_path.0][old_path.1].buffer_origin, goal_state : new_goal_state};
                     
+                    //Find where this path would be added
+                    let dest_idx = possible_dfa.state_transitions[old_path.0][symbol];
+                    println!("    New LHS is q{} ( (q{}, {}) -> q{} )",dest_idx, old_path.0, symbol, dest_idx);
                     //Follow all old pure links
+
+                    if paths[old_path.0][old_path.1].rhs_connections.len() > 0 {
+                        print!("#### Adding {} to all RHS connections: ",symbol)
+                    }
                     for old_rhs_connection in &paths[old_path.0][old_path.1].rhs_connections {
                         let new_connection = possible_dfa.state_transitions[*old_rhs_connection][symbol];
+                        print!("( (q{}, {}) -> q{} ), ", old_rhs_connection, symbol, new_connection);
                         if !new_path.rhs_connections.contains(&new_connection) {
                             new_path.rhs_connections.push(new_connection);
                             new_path.rhs_connections.sort();
                         }
                     }
-
-                   
+                    if paths[old_path.0][old_path.1].rhs_connections.len() > 0 {
+                        println!("");
+                    }
+                    println!("    The new buffer is {:?} ({:?} + {})",&new_path.buffer[..], &new_path.buffer[..(new_path.buffer.len()-1)], symbol);
                     //If any group of our buffer is the lhs side of a rule, then obviously a rule can be performed
                     //I.e. if buffer is 1,1,0,0,2
                     //we check 1,1,0,0,2 & 1,0,0,2 & 0,0,2 & 0,2 & 2
@@ -450,18 +490,27 @@ pub trait Solver where Self:Sized + Clone + Send + 'static{
                                 }
                                 for rhs in rhs_list {
                                     let mut rhs_end_idx = relevant_origin;
+                                    println!("     Last {} elements of buffer are {:?}, which can become {:?}:",new_path.buffer.len() - i, &new_path.buffer[i..], rhs);
+                                    print!("     Following RHS side from origin: ");
                                     for rhs_element in rhs {
+                                        print!("(q{},{}) -> ",rhs_end_idx, rhs_element);
                                         rhs_end_idx = possible_dfa.state_transitions[rhs_end_idx][*rhs_element as usize];
+                                        print!("q{} ",rhs_end_idx);
                                     }
+                                    println!("\n");
                                     if !new_path.rhs_connections.contains(&rhs_end_idx) {
+                                        print!("      Because (q{},{:?}) -> q{}",relevant_origin,&new_path.buffer[i..],dest_idx);
+                                        println!(" and (q{},{:?}) -> q{}, we know that q{} -> q{} is a part of this path (adding to RHS)",relevant_origin,&rhs_list,rhs_end_idx, dest_idx, rhs_end_idx);
                                         new_path.rhs_connections.push(rhs_end_idx);
                                         new_path.rhs_connections.sort();
+                                    } else {
+                                        println!("      q{} is already in the RHS connections, so this is redundant",rhs_end_idx);
                                     }
                                 }
                             }
                             None => {}
                         }
-                    } 
+                    }
                     //We strip the buffer of any characters that we know will not be used as lhs
                     //I.e. if buffer is 2,0,2 we know that first 2 is never used, so buffer should become 0,2
                     let mut match_found = false;
@@ -475,15 +524,21 @@ pub trait Solver where Self:Sized + Clone + Send + 'static{
                         }
                         if !match_found {
                             //Move 
+                            print!("    First element of buffer is unnecessary (no LHS starts with {:?} + a single character) ",new_path.buffer);
                             let unnecesary_char = new_path.buffer.remove(0);
+                            print!("-- reducing buffer to {:?}",new_path.buffer);
+                            let temp = new_path.buffer_origin;
                             new_path.buffer_origin = possible_dfa.state_transitions[new_path.buffer_origin][unnecesary_char as usize];
+                            println!(", making origin q{} ( (q{},{}) -> q{} )",new_path.buffer_origin,temp,unnecesary_char,new_path.buffer_origin);
                         }
                     }
-                    //Find where this path would be added
-                    let dest_idx = possible_dfa.state_transitions[old_path.0][symbol];
+                    
                     if !paths[dest_idx].contains(&new_path) {
+                        println!("\n##### {{Origin:q{}, Buffer:{:?}, LHS: q{}, RHS: {}}} is new! Added to paths",new_path.buffer_origin,new_path.buffer,dest_idx,hackLambda(&new_path.rhs_connections));
                         new_paths.push((dest_idx,paths[dest_idx].len()));
                         paths[dest_idx].push(new_path);
+                    } else {
+                        println!("\n##### {{Origin:q{}, Buffer:{:?}, LHS: q{}, RHS: {}}} already exists -- nothing new created here",new_path.buffer_origin,new_path.buffer,dest_idx,hackLambda(&new_path.rhs_connections));
                     }
                 }
             }
@@ -501,7 +556,7 @@ pub trait Solver where Self:Sized + Clone + Send + 'static{
             return false
         }
         //Make sure that terminal states have their own state associated with them.
-        let expanded_dfa = possible_dfa.dfa_product(&no_rule_dfa, [[false,false],[true,true]]);
+        let expanded_dfa = possible_dfa.dfa_product(&no_rule_dfa, |s,o|{*s});
 
         //Ensure that there are no cycles in the DFA (if they exist, proof fails & it is guaranteed that DFA is not minimal)
         let rule_graph = self.build_rule_graph(&expanded_dfa);
@@ -518,20 +573,20 @@ pub trait Solver where Self:Sized + Clone + Send + 'static{
         //And if all are correct, then we right to do it in an unordered fashion
         for (state_idx,state_paths) in path_graph.iter().enumerate() {
             //If the state is supposed to be accepting
-            if expanded_dfa.accepting_states.contains(&state_idx) {
+            if expanded_dfa.accepting_states[state_idx] {
                 for path in state_paths {
                     
-                    if !self.get_goal().accepting_states.contains(&path.goal_state) //If the path is not a part of the goal regex
+                    if !self.get_goal().accepting_states[path.goal_state] //If the path is not a part of the goal regex
                        && path.rhs_connections.iter().all(|f| *f != state_idx) //And the path is not looping
-                       && path.rhs_connections.iter().all(|f| !expanded_dfa.accepting_states.contains(f)) //And can only go to provably rejecting strings
+                       && path.rhs_connections.iter().all(|f| !expanded_dfa.accepting_states[*f]) //And can only go to provably rejecting strings
                        {
                         return false
                     }
                 }
             } else {
                 for path in state_paths {
-                    if self.get_goal().accepting_states.contains(&path.goal_state) || //If the path is a part of the goal regex
-                       path.rhs_connections.iter().any(|f|  expanded_dfa.accepting_states.contains(f)) //or can go to an accepting state
+                    if self.get_goal().accepting_states[path.goal_state] || //If the path is a part of the goal regex
+                       path.rhs_connections.iter().any(|f|  expanded_dfa.accepting_states[*f]) //or can go to an accepting state
                     {
                         return false
                     }
@@ -541,11 +596,11 @@ pub trait Solver where Self:Sized + Clone + Send + 'static{
         true
     }
     
-    fn correct_audit<'a>(&self, possible_dfa : &DFA, emit_steps : bool) -> ProofAudit {
+    fn correct_audit<'a>(&self, possible_dfa : &DFA, emit_steps : bool) -> ProofAudit{
 
         //Make sure that all terminal states have their own state associated with them.
         let no_rule_dfa = self.build_no_rule_dfa();
-        let expanded_dfa = possible_dfa.dfa_product(&no_rule_dfa, [[false,false],[true,true]]);
+        let expanded_dfa = possible_dfa.dfa_product(&no_rule_dfa, |s,o|{*s});
 
         let path_graph = self.build_path_graph(&expanded_dfa);
 
@@ -561,14 +616,24 @@ pub trait Solver where Self:Sized + Clone + Send + 'static{
         }
         //Record nature of all accepting states
         audit.add_step(ProofStep{
-            element : ProofElement::AddProperty(ProofProperty::Accepting(true), expanded_dfa.accepting_states.clone().into_iter().collect()), 
+            element : ProofElement::AddProperty(ProofProperty::Accepting(true), expanded_dfa.accepting_states.iter()
+            .enumerate()
+            .filter(|(_, &r)| r)
+            .map(|(index, _)| index)
+            .collect::<Vec<_>>()), 
             sources : HashSet::new(), 
             reason: ProofStepRationale::Assertion
         }, emit_steps);
 
+        let mut rejecting_states = vec![];
+        for i in 0..expanded_dfa.state_transitions.len() {
+            if !expanded_dfa.accepting_states[i] {
+                rejecting_states.push(i);
+            }
+        }
         //Record nature of all rejecting states
         audit.add_step(ProofStep{
-            element : ProofElement::AddProperty(ProofProperty::Accepting(false), HashSet::from_iter(0..expanded_dfa.state_transitions.len()).difference(&expanded_dfa.accepting_states).into_iter().cloned().collect()), 
+            element : ProofElement::AddProperty(ProofProperty::Accepting(false), rejecting_states), 
             sources : HashSet::new(), 
             reason: ProofStepRationale::Assertion
         }, emit_steps);
@@ -588,7 +653,7 @@ pub trait Solver where Self:Sized + Clone + Send + 'static{
                     //Add rejecting/accepting nature into proof (technically, this isn't an assertion, but w/e)
                     audit.add_step(ProofStep{ 
                         reason : ProofStepRationale::Assertion, 
-                        element : ProofElement::AddProperty(ProofProperty::Accepting(expanded_dfa.accepting_states.contains(&i)),vec![audit.len()-1]), 
+                        element : ProofElement::AddProperty(ProofProperty::Accepting(expanded_dfa.accepting_states[i]),vec![audit.len()-1]), 
                         sources : HashSet::from_iter(vec![i])
                     }, emit_steps);
                 }
@@ -600,12 +665,14 @@ pub trait Solver where Self:Sized + Clone + Send + 'static{
         let mut regex_clone = expanded_dfa.clone(); //This is a modifiable version of the DFA used for checking individual states
         let mut regex_correct_states = vec![]; //This stores a list of all proven states for later
         for i in 0..expanded_dfa.state_transitions.len() {
-            regex_clone.accepting_states = HashSet::from_iter(vec![i]);
+            let mut temp_accepting = vec![false;expanded_dfa.state_transitions.len()];
+            temp_accepting[i] = true;
+            regex_clone.accepting_states = temp_accepting;
             //If the state is accepting and all strings in that state are accepted by the goal regex
-            let accepting_correct = expanded_dfa.accepting_states.contains(&i) && &regex_clone <= self.get_goal();
+            let accepting_correct = expanded_dfa.accepting_states[i] && &regex_clone <= self.get_goal();
             //If the state is rejecting, terminal and all strings in that states are not accepted by the goal regex
             let is_terminal = path_graph[i].iter().all(|f| {f.rhs_connections.len() == 0});
-            let rejecting_correct = is_terminal && !expanded_dfa.accepting_states.contains(&i) && &(self.get_goal() - &regex_clone) == self.get_goal();
+            let rejecting_correct = is_terminal && !expanded_dfa.accepting_states[i] && &(self.get_goal() & &!&regex_clone) == self.get_goal();
             //&(self.get_goal() - &regex_clone) == self.get_goal() is equivalent to regex_clone.intersection(self.get_goal) == empty_set
             //But I haven't made an empty set constant for the DFA yet.
 
@@ -703,7 +770,7 @@ pub trait Solver where Self:Sized + Clone + Send + 'static{
                 // c. if 3. or 4. is proven for one looping path, it will also be true for all unproven looping paths
 
                 //If it is accepting (Checking for 1.)
-                if expanded_dfa.accepting_states.contains(&lhs) {
+                if expanded_dfa.accepting_states[lhs] {
                     
                     //For all states it can go to
                     for state in &rhs_connections {
@@ -759,7 +826,7 @@ pub trait Solver where Self:Sized + Clone + Send + 'static{
                             }
                         } else {
                             //If rejecting, requirement is that it can only go to provably rejecting states & self (Checking for 4.)
-                            if !expanded_dfa.accepting_states.contains(&lhs){
+                            if !expanded_dfa.accepting_states[lhs]{
                                 let mut all_provably_rejecting = true;
                                 for possible_rhs in &possible_path.rhs_connections {
                                     if *possible_rhs == lhs { //Except for itself!
@@ -787,7 +854,7 @@ pub trait Solver where Self:Sized + Clone + Send + 'static{
                     //If all exit paths are proven (Checking for 3.) and our hacky premature exit hasn't occurred (Checking for 4.)
                     if exit_paths == proven_exit_path_idxs.len() {
                         is_proven = true;
-                        let reason = if expanded_dfa.accepting_states.contains(&lhs) {
+                        let reason = if expanded_dfa.accepting_states[lhs] {
                             ProofStepRationale::AcceptingLooping
                         } else {    
                             ProofStepRationale::RejectingLooping

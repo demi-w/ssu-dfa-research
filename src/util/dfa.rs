@@ -1,20 +1,22 @@
 use crate::{SymbolSet, SymbolIdx};
-use serde::{Deserialize, Serialize};
-use std::{collections::{HashSet, HashMap}, io::Read};
+use serde::{de::DeserializeOwned, Deserialize, Serialize};
+use std::{collections::{HashMap, HashSet}, io::Read, marker::PhantomData, ops::{Deref, IndexMut}, slice::SliceIndex};
 use xml::{writer::{EmitterConfig, XmlEvent},reader::EventReader};
 
-use serde_json::Result;
+use serde_json::{value::Index, Result};
 use bitvec::prelude::*;
 use std::io::Write;
 
 #[derive(Clone,Serialize,Deserialize)]
-pub struct DFA {
+pub struct DFA<Output = bool, const OutputVariants : usize = 2> 
+    where Output : Clone + Serialize + Ord
+{
     pub starting_state : usize,
     pub state_transitions : Vec<Vec<usize>>,
-    pub accepting_states : HashSet::<usize>,
+    pub accepting_states : Vec<Output>, //I really do like rust -- however, trying to allow for either bitvec or
+                                        //vec stopped progress for 2 weeks
     pub symbol_set : SymbolSet
 }
-
 enum JFLAPTrans {
     From,
     To,
@@ -33,7 +35,8 @@ type File = FileHandle;
 #[cfg(target_arch = "wasm32")]
 use wasm_bindgen_futures;
 
-impl PartialOrd for DFA {
+impl<Output> PartialOrd for DFA<Output> where Output : Clone + Serialize + Ord
+{
     fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
         let mut stack = vec![(self.starting_state,other.starting_state)];
         let mut visited = HashSet::new();
@@ -44,9 +47,9 @@ impl PartialOrd for DFA {
         }
         visited.insert((self.starting_state,other.starting_state));
         while let Some(pair) = stack.pop() {
-            if self.accepting_states.contains(&pair.0) != other.accepting_states.contains(&pair.1) {
-                self_more |= self.accepting_states.contains(&pair.0);
-                other_more |= other.accepting_states.contains(&pair.1);
+            if self.accepting_states[pair.0] != other.accepting_states[pair.1] {
+                self_more |= self.accepting_states[pair.0] >= self.accepting_states[pair.1];
+                other_more |= self.accepting_states[pair.0] <= self.accepting_states[pair.1];
                 if self_more && other_more {
                     return None;
                 }
@@ -71,52 +74,284 @@ impl PartialOrd for DFA {
     }
 }
 
-impl std::ops::Not for &DFA{
-    type Output = DFA;
+impl<O> std::ops::Not for &DFA<O> where O : std::ops::Not<Output = O> + Clone + Serialize + Ord{
+    type Output = DFA<O>;
     fn not(self) -> Self::Output {
         let mut clone = self.clone();
-        let mut inverted_accepting_states = HashSet::new();
+        let mut inverted_accepting_states = Vec::new();
         for i in 0..self.state_transitions.len() {
-            if !self.accepting_states.contains(&i) {
-                inverted_accepting_states.insert(i);
-            }
+            inverted_accepting_states[i] = !self.accepting_states[i].clone();
         }
         clone.accepting_states = inverted_accepting_states;
         clone
     }
 }
 
-impl std::ops::BitAnd for &DFA {
-    type Output = DFA;
+impl<O> std::ops::BitAnd for &DFA<O> where O : std::ops::BitAnd<Output = O> + Clone + Serialize + Ord {
+    type Output = DFA<O>;
 
     fn bitand(self, rhs: Self) -> Self::Output {
-        self.dfa_product(rhs, [[false,false],[false,true]])
+        self.dfa_product(rhs, |s,o|{s.clone() & o.clone()})
     }
 }
-impl std::ops::BitOr for &DFA {
-    type Output = DFA;
+impl<O> std::ops::BitOr for &DFA<O> where O : std::ops::BitOr<Output = O> + Clone + Serialize + Ord {
+    type Output = DFA<O>;
 
     fn bitor(self, rhs: Self) -> Self::Output {
-        self.dfa_product(rhs, [[false,true],[true,true]])
+        self.dfa_product(rhs, |s,o|{s.clone() | o.clone()})
     }
 }
-impl std::ops::BitXor for &DFA {
-    type Output = DFA;
+impl<O> std::ops::BitXor for &DFA<O> where O : std::ops::BitXor<Output = O> + Clone + Serialize + Ord  {
+    type Output = DFA<O>;
 
     fn bitxor(self, rhs: Self) -> Self::Output {
-        self.dfa_product(rhs, [[false,true],[true,false]])
+        self.dfa_product(rhs, |s,o|{s.clone() ^ o.clone()})
     }
 }
 
-impl std::ops::Sub for &DFA {
-    type Output = DFA;
+
+impl<O> std::ops::Sub for &DFA<O> where O : std::ops::Sub<Output = O> + Clone + Serialize + Ord {
+    type Output = DFA<O>;
 
     fn sub(self, rhs: Self) -> Self::Output {
-        self.dfa_product(rhs, [[false,false],[true,false]])
+        self.dfa_product(rhs, |s,o|{s.clone() - o.clone()})
     }
 }
 
+
+
 impl DFA {
+    pub fn expand_to_symset(&mut self, expanded_ss : SymbolSet) {
+
+        //Find all elements of the expanded symbol set that do not exist in the dfa's
+        let mut expanded_idx = 0;
+        let mut holes = vec![];
+        for (idx,rep) in self.symbol_set.representations.iter().enumerate() {
+            while rep != &expanded_ss.representations[expanded_idx] {
+                holes.push(idx);
+                expanded_idx+=1;
+            }
+            expanded_idx+=1;
+        }
+        while expanded_idx < expanded_ss.length {
+            holes.push(usize::MAX);
+            expanded_idx+=1;
+        }
+
+        //Find/create an error state that all of the new transitions will be routed to
+        let mut error_state = None;
+        for i in 0..self.state_transitions.len() {
+            if self.accepting_states[i] {
+                continue;
+            }
+            if self.state_transitions[i].iter().all(|x| x == &i) {
+                error_state = Some(i);
+            }
+        } 
+        let error_state = match error_state {
+            Some(s) => {s}
+            None => {
+                self.state_transitions.push(vec![self.state_transitions.len();self.symbol_set.length]);
+                self.state_transitions.len() - 1
+            }
+        };
+
+        //Modify transition table to include 
+        for i in 0..self.state_transitions.len() {
+            let mut new_trans = Vec::with_capacity(expanded_ss.length);
+            let mut holes_encountered = 0;
+            for j in 0..self.state_transitions[i].len() {
+                while holes_encountered < holes.len() && holes[holes_encountered] == j {
+                    new_trans.push(error_state);
+                    holes_encountered+=1;
+                }
+                new_trans.push(self.state_transitions[i][j]);
+            }
+            while holes_encountered < holes.len() {
+                new_trans.push(error_state);
+                holes_encountered+=1;
+            }
+            self.state_transitions[i] = new_trans;
+        }
+        self.symbol_set = expanded_ss;
+    }
+
+    pub fn load_jflap_from_string(input_xml : &str) -> Self {
+        let mut trans_table ;
+        let mut accepting_states = vec![];
+        let mut num_states = 0;
+        let mut starting_state=0 ;
+        let mut e_reader = EventReader::from_str(input_xml);
+        let mut cur_state=0;
+        let mut trans_vec = vec![];
+        let mut unique_reps = HashSet::new();
+        let mut jflap_trans = JFLAPTrans::Unknown;
+
+        let mut state_ids : HashMap<String, usize>= HashMap::new();
+
+        while let Ok(cur_event) = e_reader.next() {
+            match cur_event {
+                xml::reader::XmlEvent::EndDocument => {break},
+                xml::reader::XmlEvent::Whitespace(_) => {},
+                xml::reader::XmlEvent::StartDocument { version : _, encoding : _, standalone : _ } => {},
+                xml::reader::XmlEvent::Comment(_) => {},
+                xml::reader::XmlEvent::StartElement { name, attributes, namespace : _ } => {
+                    match &name.local_name[..] { 
+                        "state" => {
+                            let cur_str = &attributes.iter().find(|&x| x.name.local_name == "id").unwrap().value;
+                            cur_state = cur_str.parse().unwrap();
+                            state_ids.insert(cur_str.clone(), num_states);
+                            num_states += 1;
+                        },
+                        "initial" => {starting_state = cur_state},
+                        "final" => {accepting_states[num_states-1] = true;},
+                        "transition" => {trans_vec.push((0,0,"".to_owned()))},
+                        "from" => {jflap_trans = JFLAPTrans::From},
+                        "to" => {jflap_trans = JFLAPTrans::To},
+                        "read" => {jflap_trans = JFLAPTrans::Read}
+                        _ => {},
+                    }
+                }
+                xml::reader::XmlEvent::EndElement { name } => {
+                    match &name.local_name[..] { 
+                        "from" | "to" | "read" => {jflap_trans = JFLAPTrans::Unknown},
+                        _ => {},
+                    }
+                },
+                xml::reader::XmlEvent::Characters (chars) => {
+                    match jflap_trans { 
+                        JFLAPTrans::From => {trans_vec.last_mut().unwrap().0 = *state_ids.get(&chars).unwrap()},
+                        JFLAPTrans::To => {trans_vec.last_mut().unwrap().1 = *state_ids.get(&chars).unwrap()},
+                        JFLAPTrans::Read => {trans_vec.last_mut().unwrap().2 = chars.clone(); unique_reps.insert(chars);},
+                        JFLAPTrans::Unknown => {}
+                    }
+                }
+                _ => {}
+            }
+        }
+        let mut reps_vec : Vec<String> = unique_reps.into_iter().collect();
+        reps_vec.sort();
+
+        trans_table = vec![vec![usize::MAX;reps_vec.len()];num_states];
+        
+        for transition in &trans_vec {
+            trans_table[transition.0][reps_vec.iter().position(|x| x == &transition.2).unwrap()] = transition.1;
+        }
+        //If dfa is incomplete
+        if trans_vec.len() < reps_vec.len() * trans_table.len() {
+            let mut error_state_already = None;
+            for state_idx in 0..trans_table.len() {
+                if !accepting_states[state_idx] && trans_table[state_idx].iter().all(|f| {f == &state_idx || f == &usize::MAX}){
+                    error_state_already = Some(state_idx);
+                }
+            }
+            let error_state = match error_state_already {
+                Some(e_state) => e_state,
+                None => {trans_table.push(vec![trans_table.len();reps_vec.len()]); trans_table.len() - 1}
+            };
+            for state_trans in &mut trans_table {
+                state_trans.iter_mut().for_each(|f| {if *f == usize::MAX {*f = error_state}});
+            }
+        }
+
+        let temp = SymbolSet {
+            length : reps_vec.len(),
+            representations : reps_vec
+        };
+        DFA { starting_state: starting_state, state_transitions: trans_table, accepting_states: accepting_states, symbol_set: temp }
+    }
+
+    pub fn save_jflap_to_bytes(&self) -> Vec<u8> {
+        let mut output_str = vec![];
+        let mut w = EmitterConfig::new().perform_indent(true).create_writer(&mut output_str);
+        w.write(XmlEvent::start_element("structure")).unwrap();
+        w.write(XmlEvent::start_element("type")).unwrap();
+        w.write(XmlEvent::characters("fa")).unwrap();
+        w.write(XmlEvent::end_element()).unwrap();
+        w.write(XmlEvent::start_element("automaton")).unwrap();
+        
+        for idx in 0..self.state_transitions.len() {
+            w.write(XmlEvent::start_element("state")
+                                                                .attr("id",&idx.to_string())
+                                                                .attr("name",&("q".to_owned()+&idx.to_string()))
+                                                            ).unwrap();
+            if idx == self.starting_state {
+                w.write(XmlEvent::start_element("initial")).unwrap();
+                w.write(XmlEvent::end_element()).unwrap();
+            }                                
+            if self.accepting_states[idx] {
+                w.write(XmlEvent::start_element("final")).unwrap();
+                w.write(XmlEvent::end_element()).unwrap();
+            }
+            w.write(XmlEvent::end_element()).unwrap();
+        }
+        let symbols = &self.symbol_set.representations;
+        for (idx,state) in self.state_transitions.iter().enumerate() {
+            for (idx2,target) in state.iter().enumerate() {
+                w.write(XmlEvent::start_element("transition")).unwrap();
+                w.write(XmlEvent::start_element("from")).unwrap();
+                w.write(XmlEvent::characters(&idx.to_string())).unwrap();
+                w.write(XmlEvent::end_element()).unwrap();
+                w.write(XmlEvent::start_element("to")).unwrap();
+                w.write(XmlEvent::characters(&target.to_string())).unwrap();
+                w.write(XmlEvent::end_element()).unwrap();
+                w.write(XmlEvent::start_element("read")).unwrap();
+                w.write(XmlEvent::characters(&format!("{}",symbols[idx2]))).unwrap();
+                w.write(XmlEvent::end_element()).unwrap();
+                w.write(XmlEvent::end_element()).unwrap();
+            }
+
+        }
+        w.write(XmlEvent::end_element()).unwrap();
+        w.write(XmlEvent::end_element()).unwrap();
+        output_str
+    }
+
+    pub fn jflap_save(&self, file : &mut File) {
+        //let mut file = fs::File::create(filename.clone().to_owned() + ".jff").unwrap();
+        let _ = file.write(&self.save_jflap_to_bytes());
+    }
+    #[cfg(not(target_arch = "wasm32"))]
+    pub fn jflap_load(file : &mut File) -> Self {
+        let mut contents = "".to_owned();
+        file.read_to_string(&mut contents).unwrap();
+        Self::load_jflap_from_string(&contents)
+    }
+}
+impl<O> DFA<O> where O : Clone + Serialize + Ord {
+
+    pub fn dfa_product<F> (&self, other : &DFA<O>, accepting_rule : F) -> Self where F : Fn(&O, &O) -> O {
+        let mut stored_idxs = vec![(self.starting_state,other.starting_state)];
+        let mut transition_table = vec![];
+        let mut accepting_states = vec![];
+        accepting_states.push(accepting_rule(&self.accepting_states[self.starting_state],&other.accepting_states[other.starting_state]));
+        while stored_idxs.len() > transition_table.len() {
+            for new_state_idx in transition_table.len()..stored_idxs.len() {
+                transition_table.push(vec![0;self.symbol_set.length]);
+                for symbol in 0..self.symbol_set.length {
+                    let new_self_idx = self.state_transitions[stored_idxs[new_state_idx].0][symbol];
+                    let new_other_idx = other.state_transitions[stored_idxs[new_state_idx].1][symbol];
+                    let new_pair = (new_self_idx, new_other_idx);
+                    match stored_idxs.iter().position(|f| f == &new_pair) {
+                        Some(pos) => {
+                            transition_table.last_mut().unwrap()[symbol] = pos;
+                        }
+                        None =>  {
+                            accepting_states.push(accepting_rule(&self.accepting_states[new_pair.0],&other.accepting_states[new_pair.1]));
+                            transition_table.last_mut().unwrap()[symbol] = stored_idxs.len();
+                            stored_idxs.push(new_pair);
+                        }
+                    }
+                }
+            }
+        }
+        DFA {
+            accepting_states : accepting_states,
+            starting_state : 0,
+            state_transitions : transition_table,
+            symbol_set : self.symbol_set.clone(),
+        }
+    }
 
     pub fn minimize(&mut self) {
 
@@ -124,8 +359,18 @@ impl DFA {
         let mut old_partition_membership = vec![0;self.state_transitions.len()];
         let mut new_partitions : Vec<Vec<usize>> = vec![vec![],vec![]];
         let mut old_partitions = vec![];
+
+        let mut old_outputs = Vec::new();
         for i in 0..self.state_transitions.len() {
-            let idx = self.accepting_states.contains(&i) as usize;
+            let idx = match (&mut old_outputs.clone().into_iter()).position(|x| {x == self.accepting_states[i]}) {
+                Some(idx) => {
+                    idx
+                }
+                None => {
+                    old_outputs.push(self.accepting_states[i].clone());
+                    old_outputs.len() - 1
+                }
+            };
             new_partition_membership[i] = idx;
             new_partitions[idx].push(i)
         }
@@ -166,11 +411,9 @@ impl DFA {
                 new_partitions.append(&mut split_partitions);
             }
         }
-        let mut new_accepting = HashSet::new();
+        let mut new_accepting = Vec::new();
         for (p_index, partition) in new_partitions.iter().enumerate() {
-            if self.accepting_states.contains(&partition[0]) {
-                new_accepting.insert(p_index);
-            }
+            new_accepting.push(self.accepting_states[partition[0]].clone());
         }
 
         self.starting_state = new_partition_membership[self.starting_state];
@@ -187,98 +430,6 @@ impl DFA {
         self.state_transitions = new_transition_table;
         self.accepting_states = new_accepting;
 
-    }
-
-    pub fn dfa_product(&self, other : &DFA, accepting_table : [[bool;2];2]) -> Self {
-        let mut stored_idxs = vec![(self.starting_state,other.starting_state)];
-        let mut transition_table = vec![];
-        let mut accepting_states = HashSet::new();
-        if accepting_table[self.accepting_states.contains(&self.starting_state) as usize][other.accepting_states.contains(&other.starting_state) as usize] {
-            accepting_states.insert(0);
-        }
-        while stored_idxs.len() > transition_table.len() {
-            for new_state_idx in transition_table.len()..stored_idxs.len() {
-                transition_table.push(vec![0;self.symbol_set.length]);
-                for symbol in 0..self.symbol_set.length {
-                    let new_self_idx = self.state_transitions[stored_idxs[new_state_idx].0][symbol];
-                    let new_other_idx = other.state_transitions[stored_idxs[new_state_idx].1][symbol];
-                    let new_pair = (new_self_idx, new_other_idx);
-                    match stored_idxs.iter().position(|f| f == &new_pair) {
-                        Some(pos) => {
-                            transition_table.last_mut().unwrap()[symbol] = pos;
-                        }
-                        None =>  {
-                            if accepting_table[self.accepting_states.contains(&new_pair.0) as usize][other.accepting_states.contains(&new_pair.1) as usize] {
-                                accepting_states.insert(stored_idxs.len());
-                            }
-                            transition_table.last_mut().unwrap()[symbol] = stored_idxs.len();
-                            stored_idxs.push(new_pair);
-                        }
-                    }
-                }
-            }
-        }
-        DFA {
-            accepting_states : accepting_states,
-            starting_state : 0,
-            state_transitions : transition_table,
-            symbol_set : self.symbol_set.clone()
-        }
-    }
-
-    pub fn expand_to_symset(&mut self, expanded_ss : SymbolSet) {
-
-        //Find all elements of the expanded symbol set that do not exist in the dfa's
-        let mut expanded_idx = 0;
-        let mut holes = vec![];
-        for (idx,rep) in self.symbol_set.representations.iter().enumerate() {
-            while rep != &expanded_ss.representations[expanded_idx] {
-                holes.push(idx);
-                expanded_idx+=1;
-            }
-            expanded_idx+=1;
-        }
-        while expanded_idx < expanded_ss.length {
-            holes.push(usize::MAX);
-            expanded_idx+=1;
-        }
-
-        //Find/create an error state that all of the new transitions will be routed to
-        let mut error_state = None;
-        for i in 0..self.state_transitions.len() {
-            if self.accepting_states.contains(&i) {
-                continue;
-            }
-            if self.state_transitions[i].iter().all(|x| x == &i) {
-                error_state = Some(i);
-            }
-        } 
-        let error_state = match error_state {
-            Some(s) => {s}
-            None => {
-                self.state_transitions.push(vec![self.state_transitions.len();self.symbol_set.length]);
-                self.state_transitions.len() - 1
-            }
-        };
-
-        //Modify transition table to include 
-        for i in 0..self.state_transitions.len() {
-            let mut new_trans = Vec::with_capacity(expanded_ss.length);
-            let mut holes_encountered = 0;
-            for j in 0..self.state_transitions[i].len() {
-                while holes_encountered < holes.len() && holes[holes_encountered] == j {
-                    new_trans.push(error_state);
-                    holes_encountered+=1;
-                }
-                new_trans.push(self.state_transitions[i][j]);
-            }
-            while holes_encountered < holes.len() {
-                new_trans.push(error_state);
-                holes_encountered+=1;
-            }
-            self.state_transitions[i] = new_trans;
-        }
-        self.symbol_set = expanded_ss;
     }
 
     pub fn ss_eq(&self, other: &Self, our_ss : &Vec<BitVec>, other_ss : &Vec<BitVec>) -> Vec<(usize,usize,Vec<usize>,Vec<usize>)> {
@@ -317,12 +468,12 @@ impl DFA {
         result
     }
 
-    pub fn contains(&self, input : &Vec<SymbolIdx>) -> bool {
+    pub fn contains(&self, input : &Vec<SymbolIdx>) -> O {
         let mut state = self.starting_state;
         for i in input {
             state = self.state_transitions[state][*i as usize];
         }
-        self.accepting_states.contains(&state)
+        self.accepting_states[state].clone()
     }
 
     pub fn final_state(&self, input : &Vec<SymbolIdx>) -> usize{
@@ -333,12 +484,12 @@ impl DFA {
         state
     }
 
-    pub fn contains_from_start(&self, input : &Vec<SymbolIdx>, start : usize) -> bool {
+    pub fn contains_from_start(&self, input : &Vec<SymbolIdx>, start : usize) -> O {
         let mut state = start;
         for i in input {
             state = self.state_transitions[state][*i as usize];
         }
-        self.accepting_states.contains(&state)
+        self.accepting_states[state].clone()
     }
 
     pub fn shortest_path_to_state(&self, desired : usize) -> Vec<SymbolIdx> {
@@ -425,165 +576,26 @@ impl DFA {
     }
 
 
-    pub fn load_jflap_from_string(input_xml : &str) -> Self {
-        let mut trans_table ;
-        let mut accepting_states = HashSet::new();
-        let mut num_states = 0;
-        let mut starting_state=0 ;
-        let mut e_reader = EventReader::from_str(input_xml);
-        let mut cur_state=0;
-        let mut trans_vec = vec![];
-        let mut unique_reps = HashSet::new();
-        let mut jflap_trans = JFLAPTrans::Unknown;
-
-        let mut state_ids : HashMap<String, usize>= HashMap::new();
-
-        while let Ok(cur_event) = e_reader.next() {
-            match cur_event {
-                xml::reader::XmlEvent::EndDocument => {break},
-                xml::reader::XmlEvent::Whitespace(_) => {},
-                xml::reader::XmlEvent::StartDocument { version : _, encoding : _, standalone : _ } => {},
-                xml::reader::XmlEvent::Comment(_) => {},
-                xml::reader::XmlEvent::StartElement { name, attributes, namespace : _ } => {
-                    match &name.local_name[..] { 
-                        "state" => {
-                            let cur_str = &attributes.iter().find(|&x| x.name.local_name == "id").unwrap().value;
-                            cur_state = cur_str.parse().unwrap();
-                            state_ids.insert(cur_str.clone(), num_states);
-                            num_states += 1;
-                        },
-                        "initial" => {starting_state = cur_state},
-                        "final" => {accepting_states.insert(num_states-1);},
-                        "transition" => {trans_vec.push((0,0,"".to_owned()))},
-                        "from" => {jflap_trans = JFLAPTrans::From},
-                        "to" => {jflap_trans = JFLAPTrans::To},
-                        "read" => {jflap_trans = JFLAPTrans::Read}
-                        _ => {},
-                    }
-                }
-                xml::reader::XmlEvent::EndElement { name } => {
-                    match &name.local_name[..] { 
-                        "from" | "to" | "read" => {jflap_trans = JFLAPTrans::Unknown},
-                        _ => {},
-                    }
-                },
-                xml::reader::XmlEvent::Characters (chars) => {
-                    match jflap_trans { 
-                        JFLAPTrans::From => {trans_vec.last_mut().unwrap().0 = *state_ids.get(&chars).unwrap()},
-                        JFLAPTrans::To => {trans_vec.last_mut().unwrap().1 = *state_ids.get(&chars).unwrap()},
-                        JFLAPTrans::Read => {trans_vec.last_mut().unwrap().2 = chars.clone(); unique_reps.insert(chars);},
-                        JFLAPTrans::Unknown => {}
-                    }
-                }
-                _ => {}
-            }
-        }
-        let mut reps_vec : Vec<String> = unique_reps.into_iter().collect();
-        reps_vec.sort();
-
-        trans_table = vec![vec![usize::MAX;reps_vec.len()];num_states];
-        
-        for transition in &trans_vec {
-            trans_table[transition.0][reps_vec.iter().position(|x| x == &transition.2).unwrap()] = transition.1;
-        }
-        //If dfa is incomplete
-        if trans_vec.len() < reps_vec.len() * trans_table.len() {
-            let mut error_state_already = None;
-            for state_idx in 0..trans_table.len() {
-                if !accepting_states.contains(&state_idx) && trans_table[state_idx].iter().all(|f| {f == &state_idx || f == &usize::MAX}){
-                    error_state_already = Some(state_idx);
-                }
-            }
-            let error_state = match error_state_already {
-                Some(e_state) => e_state,
-                None => {trans_table.push(vec![trans_table.len();reps_vec.len()]); trans_table.len() - 1}
-            };
-            for state_trans in &mut trans_table {
-                state_trans.iter_mut().for_each(|f| {if *f == usize::MAX {*f = error_state}});
-            }
-        }
-
-        let temp = SymbolSet {
-            length : reps_vec.len(),
-            representations : reps_vec
-        };
-        DFA { starting_state: starting_state, state_transitions: trans_table, accepting_states: accepting_states, symbol_set: temp }
-    }
-
-    pub fn save_jflap_to_bytes(&self) -> Vec<u8> {
-        let mut output_str = vec![];
-        let mut w = EmitterConfig::new().perform_indent(true).create_writer(&mut output_str);
-        w.write(XmlEvent::start_element("structure")).unwrap();
-        w.write(XmlEvent::start_element("type")).unwrap();
-        w.write(XmlEvent::characters("fa")).unwrap();
-        w.write(XmlEvent::end_element()).unwrap();
-        w.write(XmlEvent::start_element("automaton")).unwrap();
-        
-        for idx in 0..self.state_transitions.len() {
-            w.write(XmlEvent::start_element("state")
-                                                                .attr("id",&idx.to_string())
-                                                                .attr("name",&("q".to_owned()+&idx.to_string()))
-                                                            ).unwrap();
-            if idx == self.starting_state {
-                w.write(XmlEvent::start_element("initial")).unwrap();
-                w.write(XmlEvent::end_element()).unwrap();
-            }                                
-            if self.accepting_states.contains(&idx) {
-                w.write(XmlEvent::start_element("final")).unwrap();
-                w.write(XmlEvent::end_element()).unwrap();
-            }
-            w.write(XmlEvent::end_element()).unwrap();
-        }
-        let symbols = &self.symbol_set.representations;
-        for (idx,state) in self.state_transitions.iter().enumerate() {
-            for (idx2,target) in state.iter().enumerate() {
-                w.write(XmlEvent::start_element("transition")).unwrap();
-                w.write(XmlEvent::start_element("from")).unwrap();
-                w.write(XmlEvent::characters(&idx.to_string())).unwrap();
-                w.write(XmlEvent::end_element()).unwrap();
-                w.write(XmlEvent::start_element("to")).unwrap();
-                w.write(XmlEvent::characters(&target.to_string())).unwrap();
-                w.write(XmlEvent::end_element()).unwrap();
-                w.write(XmlEvent::start_element("read")).unwrap();
-                w.write(XmlEvent::characters(&format!("{}",symbols[idx2]))).unwrap();
-                w.write(XmlEvent::end_element()).unwrap();
-                w.write(XmlEvent::end_element()).unwrap();
-            }
-
-        }
-        w.write(XmlEvent::end_element()).unwrap();
-        w.write(XmlEvent::end_element()).unwrap();
-        output_str
-    }
-
-    pub fn jflap_save(&self, file : &mut File) {
-        //let mut file = fs::File::create(filename.clone().to_owned() + ".jff").unwrap();
-        let _ = file.write(&self.save_jflap_to_bytes());
-    }
-    #[cfg(not(target_arch = "wasm32"))]
-    pub fn jflap_load(file : &mut File) -> Self {
-        let mut contents = "".to_owned();
-        file.read_to_string(&mut contents).unwrap();
-        Self::load_jflap_from_string(&contents)
-    }
-    #[cfg(not(target_arch = "wasm32"))]
-    pub fn load(file : &mut File) -> Result::<Self> {
-        let mut contents = "".to_owned();
-        file.read_to_string(&mut contents).unwrap();
-        
-        serde_json::from_str(&contents)
-    }
-    pub fn save(&self, file : &mut File) {
-        //let mut file = fs::File::create(filename.clone().to_owned() + ".dfa").unwrap();
-        let _ = file.write(serde_json::to_string(self).unwrap().as_bytes());
-    }
 
     //pub fn minify(&mut self) {}
 
     //pub fn one_rule_expand(&self, rules : &Ruleset) -> DFA{ return self.clone()}
 }
 
-impl PartialEq for DFA {
+impl<'de,O> DFA<O> where O : Clone + Serialize + Ord + DeserializeOwned {
+    #[cfg(not(target_arch = "wasm32"))]
+    pub fn load(file : &mut File) -> Result::<Self> {
+        use std::io::BufReader;
+        serde_json::from_reader(BufReader::new(file))
+
+    }
+    pub fn save(&self, file : &mut File) {
+        //let mut file = fs::File::create(filename.clone().to_owned() + ".dfa").unwrap();
+        let _ = file.write(serde_json::to_string(self).unwrap().as_bytes());
+    }
+}
+
+impl <O> PartialEq for DFA<O> where O : Clone + Serialize + Ord  {
     fn eq(&self, other: &Self) -> bool {
         let mut stack = vec![(self.starting_state,other.starting_state)];
         let mut visited = HashSet::new();
@@ -592,7 +604,7 @@ impl PartialEq for DFA {
         }
         visited.insert((self.starting_state,other.starting_state));
         while let Some(pair) = stack.pop() {
-            if self.accepting_states.contains(&pair.0) != other.accepting_states.contains(&pair.1) {
+            if self.accepting_states[pair.0] != other.accepting_states[pair.1] {
                 return false;
             }
             for i in 0..self.symbol_set.length {

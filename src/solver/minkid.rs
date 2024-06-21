@@ -414,15 +414,13 @@ impl Solver for MinkidSolver {
         dfa_events.send(real_self.translate_to_debug(&dfa_graph, &sig_set)).unwrap();
     }
     let mut trans_table = vec![vec![0;real_self.rules.symbol_set.length];dfa_graph.node_count()];
-    let mut accepting_states = HashSet::new();
+    let mut accepting_states = Vec::new();
     for node in dfa_graph.node_indices() {
         for edge in dfa_graph.edges_directed(node,Outgoing) {
             trans_table[node.index()][*edge.weight() as usize] = edge.target().index();
         }
         //Checks if empty string set is a member of minkids or an ancestor of it
-        if real_self.check_if_ancestor(&dfa_graph[node].read().unwrap().minkids, real_self.ss_idx_to_link[0]) {
-            accepting_states.insert(node.index());
-        }
+        accepting_states.push(real_self.check_if_ancestor(&dfa_graph[node].read().unwrap().minkids, real_self.ss_idx_to_link[0]));
     }
     DFA {
         state_transitions : trans_table,

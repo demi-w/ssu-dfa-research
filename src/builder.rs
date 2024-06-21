@@ -3,10 +3,16 @@ use std::collections::HashSet;
 use crate::{util::{DFA, SymbolSet, Ruleset, SymbolIdx}, solver::Solver};
 
 pub fn build_1dpeg_result() -> DFA {
+    let mut accepting_vec = vec![false;18];
+    accepting_vec[2]= true;
+    accepting_vec[3] = true;
+    accepting_vec[4] = true;
+    accepting_vec[6] = true;
+    accepting_vec[7] = true;
     DFA {
         starting_state:0,
         state_transitions:vec![vec![1,2],vec![1,3],vec![4,5],vec![4,6],vec![7,8],vec![3,9],vec![3,9],vec![7,10],vec![11,4],vec![12,13],vec![10,10],vec![10,14],vec![10,15],vec![8,16],vec![11,7],vec![10,11],vec![12,17],vec![14,16]],
-        accepting_states:HashSet::from_iter(vec![2,6,7,4,3].iter().cloned()),
+        accepting_states: accepting_vec,
         symbol_set:SymbolSet {length:2,representations:vec!["0".to_owned(),"1".to_owned()]}
     }
 }
@@ -20,7 +26,7 @@ pub fn build_all0() -> DFA {
     DFA {
         starting_state : 0,
         state_transitions : vec![vec![0]],
-        accepting_states : HashSet::from_iter(vec![0]),
+        accepting_states : vec![true],
         symbol_set : b_symbol_set.clone()
     }
 }
@@ -34,7 +40,7 @@ pub fn build_all000() -> DFA {
     DFA {
         starting_state : 0,
         state_transitions : vec![vec![0]],
-        accepting_states : HashSet::from_iter(vec![0]),
+        accepting_states : vec![true],
         symbol_set : b_symbol_set.clone()
     }
 }
@@ -47,7 +53,7 @@ pub fn build_onlyone1() -> DFA {
     DFA {
         starting_state : 0,
         state_transitions : vec![vec![0,1],vec![1,2],vec![2,2]],
-        accepting_states : HashSet::from_iter(vec![1]),
+        accepting_states : vec![false,true,false],
         symbol_set : b_symbol_set.clone()
     }
 }
@@ -60,7 +66,7 @@ pub fn build_onlyone2() -> DFA {
     DFA {
         starting_state : 0,
         state_transitions : vec![vec![0,2,1],vec![1,2,2],vec![2,2,2]],
-        accepting_states : HashSet::from_iter(vec![1]),
+        accepting_states : vec![false,true,false],
         symbol_set : b_symbol_set.clone()
     }
 }
@@ -84,10 +90,14 @@ pub fn build_2dpeg_goal() -> DFA {
         }
         
     }
-    let mut new_accepting = root_dfa.accepting_states.clone();
-    for i in root_dfa.accepting_states {
-        new_accepting.insert(i + 16);
-        new_accepting.insert(i + 32);
+    let mut new_accepting = vec![false;trans_table.len()];
+    for (i,val) in root_dfa.accepting_states.iter().enumerate() {
+        if *val {
+            new_accepting[i] = true;
+            new_accepting[i + 16] = true;
+            new_accepting[i + 32] = true;
+        }
+
     }  
 
     let by_k_symbol_set = SymbolSet {

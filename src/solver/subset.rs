@@ -333,11 +333,9 @@ impl Solver for SubsetSolver {
             phase_events.send(dur).unwrap();
         }
         }
-        let mut accepting_states = HashSet::new();
+        let mut accepting_states = Vec::new();
         for (key, val) in self.unique_sigs.iter() {
-            if key[0] {
-                accepting_states.insert(*val);
-            }
+            accepting_states.push(key[0])
         }
         let trans_table = self.trans_table.clone();
         if is_debug {

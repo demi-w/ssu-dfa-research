@@ -38,23 +38,20 @@ pub enum SSStructure {
     Boolean(Vec<BitVec>),
     BooleanMap(HashMap<BitVec,usize>)
 }
-
+//TODO: Genericize this as well
 impl SSStructure {
-    pub fn accepting_states(&self) -> HashSet<usize> {
-        let mut result = HashSet::new();
+    pub fn accepting_states(&self) -> Vec<bool> {
+        let mut result = vec![];
         match self {
             Self::Boolean(vec) => {
                 for (idx, ss) in vec.iter().enumerate() {
-                    if ss[0] {
-                        result.insert(idx);
-                    }
+                    result.push(ss[0]);
                 }
             }
             Self::BooleanMap(map) => {
+                result = vec![false;map.keys().len()];
                 for (ss, idx) in map {
-                    if ss[0] {
-                        result.insert(*idx);
-                    }
+                    result[*idx] = ss[0];
                 }
             }
         }

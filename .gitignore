@@ -1,5 +1,5 @@
 /target
-/.vscode
+*.vscode
 /link_graph_debug/*
 /dist
 /dfaresults
@@ -10,3 +10,5 @@
 /gui/target
 Cargo.lock
 /playground
+*.DS_Store
+/gui/.vscode
