@@ -2,16 +2,17 @@ use serde::{Serialize,Deserialize};
 pub type SymbolIdx = u8;
 
 #[derive(Clone,Serialize,Deserialize, PartialEq, Eq,Debug)]
-pub struct SymbolSet {
+pub struct SymbolSet<Output = String> where Output : std::fmt::Display {
     pub length : usize,
-    pub representations : Vec<String>
+    pub representations : Vec<Output>
 }
-impl SymbolSet {
+impl<Output> SymbolSet<Output> where Output : std::fmt::Display {
     pub fn new(mut representations : Vec<String>) -> SymbolSet{
         representations.sort();
         SymbolSet { length: representations.len(), representations: representations }
     }
 
+    //Returns the appropriate index for a certain string
     pub fn find_in_sig_set<'a>(&self, string : impl Iterator<Item = &'a SymbolIdx>) -> usize
     {
         let mut result = 0;
