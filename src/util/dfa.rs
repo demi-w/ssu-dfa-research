@@ -589,9 +589,9 @@ impl<'de,O> DFA<O> where O : Clone + Serialize + Ord + DeserializeOwned {
         serde_json::from_reader(BufReader::new(file))
 
     }
-    pub fn save(&self, file : &mut File) {
-        //let mut file = fs::File::create(filename.clone().to_owned() + ".dfa").unwrap();
-        let _ = file.write(serde_json::to_string(self).unwrap().as_bytes());
+    pub fn save(&self, file : &mut File) -> Result::<()> {
+        let writer = std::io::BufWriter::new(file);
+        serde_json::to_writer(writer,self)
     }
 }
 
