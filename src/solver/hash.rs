@@ -2,7 +2,8 @@ use std::collections::{HashSet, HashMap};
 
 use crate::{util::{Ruleset, DFA, SymbolIdx}, solver::{DFAStructure, SSStructure}};
 
-use super::{Solver, Instant, DomainError};
+use super::{Instant, SRSSolver, Solver};
+use crate::solver::srssolver::DomainError;
 
 use bitvec::prelude::*;
 
@@ -17,17 +18,13 @@ pub struct HashSolver {
 }
 
 
-impl Solver for HashSolver {
-
-    fn get_max_input(&self) -> usize {
-        self.max_input
-    }
-    fn get_min_input(&self) -> usize {
-        self.min_input
-    }
+impl SRSSolver for HashSolver {
 
     fn get_goal(&self) -> &DFA {
         &self.goal
+    }
+    fn get_ruleset(&self) -> &Ruleset{
+        &self.rules
     }
 
     fn new(mut ruleset : Ruleset, mut goal : DFA) -> Result<Self,DomainError> {
@@ -35,26 +32,33 @@ impl Solver for HashSolver {
         let (min_input, max_input) = HashSolver::sized_init(&ruleset);
         Ok(HashSolver { min_input : min_input, max_input : max_input, goal: goal, rules: ruleset, board_solutions : HashMap::new() })
     }
-    fn get_phases() -> Vec<String> {
-        vec!["Entire Iteration".to_owned()]
+
+}
+
+
+
+impl Solver for HashSolver {
+    const PHASES : &'static [&'static str] = &["Entire Iteration"];
+    fn evaluate<'a,'b>(&'a self, state : &'b Vec<u8>) -> bool {
+        todo!()
     }
 
-    fn get_ruleset(&self) -> &Ruleset{
-        &self.rules
+    fn mutate(&self, state : Vec<u8>, input : SymbolIdx) -> Vec<u8> {
+        todo!()
     }
-
     fn run_internal(mut self,
                         sig_k : usize, 
                         is_debug : bool,
                         dfa_events : std::sync::mpsc::Sender<(DFAStructure,SSStructure)>, 
-                        phase_events : std::sync::mpsc::Sender<std::time::Duration>) -> DFA {
+                        phase_events : std::sync::mpsc::Sender<std::time::Duration>,
+                    origin : Vec<SymbolIdx>) -> DFA {
         let init_begin_time = Instant::now();
         let sig_set = self.rules.symbol_set.build_sig_k(sig_k);
         
         let mut trans_table : Vec<Vec<usize>> = Vec::new(); //omg it's me !!!
         let mut table_reference = HashMap::<BitVec,usize>::new();
     
-        let mut new_boards : Vec::<(usize,Vec<SymbolIdx>)> = vec![(0,vec![])];
+        let mut new_boards : Vec::<(usize,Vec<SymbolIdx>)> = vec![(0,origin.clone())];
     
         let mut old_boards : Vec::<(usize,Vec<SymbolIdx>)> = Vec::new();
     
@@ -66,12 +70,12 @@ impl Solver for HashSolver {
             empty_copy.push(0);
         }
 
-        let start_accepting = self.sig_with_set(&vec![],&sig_set);
+        let start_accepting = self.sig_with_set(&origin,&sig_set);
         table_reference.insert(start_accepting.clone(),0);
         trans_table.push(empty_copy.clone());
 
         //redundant bc of start_accepting already checking this but idc
-        if self.bfs_solver(&vec![]) {
+        if self.bfs_solver(&origin) {
             accepting_states[0] = true;
         }
         

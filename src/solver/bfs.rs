@@ -1,4 +1,5 @@
 use std::collections::{HashMap, HashSet};
+use std::hash::Hash;
 use std::sync::{mpsc::Sender, Arc};
 use std::thread;
 use std::time::Duration;
@@ -9,80 +10,88 @@ use crossbeam::queue::SegQueue;
 
 use crate::util::{Ruleset, DFA, SymbolIdx};
 use crate::solver::Solver;
+use crate::SymbolSet;
 
-use super::{DFAStructure, SSStructure, Instant, DomainError};
+use super::{DFAStructure, GenericSolver, SRSSolver, SSStructure};
+use super::Instant;
+use crate::solver::srssolver::DomainError;
 
 use bitvec::prelude::*;
 
 #[derive(Clone)]
-pub struct BFSSolver {
-    pub rules : Ruleset,
-    min_input : usize,
-    max_input : usize,
-    pub goal : DFA,
-    worker_threads : usize
+pub struct BFSSolver<State = Vec<u8>, Input = String, Output = bool> where State : Clone {
+    rules : Option<Ruleset>,
+    goal : Option<DFA<Input,Output>>,
+    pub symbol_set : SymbolSet::<Input>,
+    worker_threads : usize,
+    mutator : fn(&Self, State, SymbolIdx) -> State,
+    evaluator : fn(&Self, &State) -> Output,
+
+}
+
+impl SRSSolver for BFSSolver<Vec<SymbolIdx>,String,bool> {
+
+    fn get_goal(&self) -> &DFA {
+        &self.goal.as_ref().unwrap()
+    }
+    fn get_ruleset(&self) -> &Ruleset{
+        &self.rules.as_ref().unwrap()
+    }
+
+    fn new(mut ruleset:Ruleset, mut goal : DFA) -> Result<Self,DomainError> {
+        //Self::ensure_expansion(&mut ruleset,&mut goal);
+        Ok(BFSSolver { 
+            rules: Some(ruleset),
+            goal : Some(goal.clone()),
+            symbol_set : goal.symbol_set.clone(),
+            worker_threads : 32,
+            evaluator : SRSSolver::default_evaluator,
+            mutator : SRSSolver::MUTATOR
+        })
+    }
 }
 
 #[async_trait]
-impl Solver for BFSSolver {
-
-    fn get_max_input(&self) -> usize {
-        self.max_input
+impl<State, Input, Output> Solver<State, Input, Output> for BFSSolver<State, Input, Output>
+where State : Clone + 'static + std::marker::Send + std::marker::Sync + Default, 
+Input : std::marker::Send + std::marker::Sync + Clone + 'static, 
+Output : std::marker::Send + std::marker::Sync + Clone + 'static + Default + std::hash::Hash + Eq{
+    const PHASES : &'static [&'static str] = &["Entire Iteration"];
+    fn mutate(&self, state : State, input : SymbolIdx) -> State {
+        (self.mutator)(&self, state, input)
     }
-    fn get_min_input(&self) -> usize {
-        self.min_input
+    fn evaluate(&self, state: &State) -> Output {
+        (self.evaluator)(&self,state)
     }
-
-    fn get_goal(&self) -> &DFA {
-        &self.goal
-    }
-
-    fn get_phases() -> Vec<String> {
-        vec!["Entire Iteration".to_owned()]
-    }
-
-    fn get_ruleset(&self) -> &Ruleset{
-        &self.rules
-    }
-
-    fn new(mut ruleset:Ruleset, mut goal :DFA) -> Result<Self,DomainError> {
-        Self::ensure_expansion(&mut ruleset,&mut goal);
-        let (min_input, max_input) = BFSSolver::sized_init(&ruleset);
-        Ok(BFSSolver { 
-            rules: ruleset,
-            goal : goal,
-            worker_threads : 32,
-            min_input : min_input,
-            max_input : max_input    
-        })
-    }
+    
     fn run_internal(self, 
         sig_k : usize, 
         is_debug : bool,
         dfa_events : Sender<(DFAStructure,SSStructure)>, 
-        phase_events : Sender<Duration>) -> DFA 
+        phase_events : Sender<Duration>, 
+        origin : State) -> DFA<Input, Output>
     {
         let init_begin_time = Instant::now();
-        let sig_set = self.rules.symbol_set.build_sig_k(sig_k);
+        let sig_set = self.symbol_set.build_sig_k(sig_k);
         let mut trans_table : Vec<Vec<usize>> = Vec::new(); //omg it's me !!!
-        let mut table_reference = HashMap::<BitVec,usize>::new();
+        let mut table_reference = HashMap::<Vec<Output>,usize>::new();
     
-        let mut new_boards : Vec::<(usize,Vec<SymbolIdx>)> = vec![(0,vec![])];
+        let mut new_boards : Vec::<(usize,State)> = vec![(0,origin.clone())];
     
-        let mut old_boards : Vec::<(usize,Vec<SymbolIdx>)> = Vec::new();
+        let mut old_boards : Vec::<(usize,State)> = Vec::new();
     
-        let mut accepting_states : Vec<bool> = vec![self.goal.contains(&vec![])];
+        let mut state_outputs : Vec<Output> = vec![self.evaluate(&origin)];
         
-        let thread_translator : Arc<BFSSolver> = Arc::new(self.clone());
+        let thread_translator : Arc<Self> = Arc::new(self.clone());
 
         let (input, output) = self.create_workers(thread_translator.clone());
 
         let mut empty_copy : Vec<usize> = Vec::new();
-        for _ in 0..self.rules.symbol_set.length {
+        for _ in 0..self.symbol_set.length {
             empty_copy.push(0);
         }
 
-        let start_accepting = self.sig_with_set_batch(&vec![],&sig_set, input.clone(), output.clone());
+        let start_accepting = self.sig_with_set_batch(&origin,&sig_set, input.clone(), output.clone());
         table_reference.insert(start_accepting.clone(),0);
         trans_table.push(empty_copy.clone());
 
@@ -93,7 +102,8 @@ impl Solver for BFSSolver {
         }
         while new_boards.len() > 0 {
             if is_debug {
-                dfa_events.send((DFAStructure::Dense(trans_table.clone()),SSStructure::BooleanMap(table_reference.clone()))).unwrap();
+                //TODO: Genericize this
+                //dfa_events.send((DFAStructure::Dense(trans_table.clone()),SSStructure::BooleanMap(table_reference.clone()))).unwrap();
             }
             let iter_begin_time = Instant::now();
             std::mem::swap(&mut old_boards,&mut new_boards);
@@ -122,7 +132,7 @@ impl Solver for BFSSolver {
                             table_reference.insert(new_board.0.clone(),new_idx);
                             trans_table.push(empty_copy.clone());
     
-                            accepting_states.push(thread_translator.bfs_solver_batch(&new_board.1));
+                            state_outputs.push(thread_translator.evaluate(&new_board.1));
                             new_idx
                             }
                         };
@@ -136,66 +146,84 @@ impl Solver for BFSSolver {
                 }
             }
         if is_debug {
-            dfa_events.send((DFAStructure::Dense(trans_table.clone()),SSStructure::BooleanMap(table_reference.clone()))).unwrap();
+            //TODO: Genericize this
+            //dfa_events.send((DFAStructure::Dense(trans_table.clone()),SSStructure::BooleanMap(table_reference.clone()))).unwrap();
         }
         self.terminate_workers(input);
         DFA {
             state_transitions : trans_table,
-            accepting_states : accepting_states,
+            accepting_states : state_outputs,
             starting_state : 0,
-            symbol_set : self.rules.symbol_set.clone()
+            symbol_set : self.symbol_set.clone()
         }
     }
 }
 
-impl BFSSolver {
-    pub fn new_with_threads(ruleset:Ruleset, goal: DFA, worker_threads : usize) -> Self {
-        let (min_input, max_input) = BFSSolver::sized_init(&ruleset);
-        BFSSolver { 
-            rules: ruleset,
-            goal : goal,
-            worker_threads : worker_threads,
-            min_input : min_input,
-            max_input : max_input 
+impl<State,Input,Output> GenericSolver<State,Input,Output> for BFSSolver<State, Input, Output> where 
+State : Clone + 'static + std::marker::Send + std::marker::Sync + Default, 
+Input : std::marker::Send + Clone + 'static + std::marker::Sync, 
+Output : std::marker::Send + Clone + 'static + std::marker::Sync + Default + std::hash::Hash + Eq{
+    fn new(mutator : fn(&Self, State, SymbolIdx) -> State, evaluator : fn(&Self, &State) -> Output, symset : SymbolSet<Input>) -> Self {
+        BFSSolver {
+            rules : None,
+            goal : None,
+            symbol_set : symset,
+            worker_threads : 32,
+            mutator : mutator,
+            evaluator : evaluator
         }
     }
-    fn create_workers(&self, thread_translator : Arc<BFSSolver>) -> (Arc<SegQueue<(Vec<SymbolIdx>,usize)>>,Arc<SegQueue<(bool,usize)>>) {
+    fn set_evaluator(&mut self, evaluator : fn(&Self, &State) -> Output) {
+        self.evaluator = evaluator;
+    }
+    fn set_mutator(&mut self, mutator : fn (&Self, state : State, input : SymbolIdx) -> State) {
+        self.mutator = mutator;
+    }
+}
 
-        let input : Arc<SegQueue<(Vec<SymbolIdx>,usize)>> = Arc::new(SegQueue::new());
-        let output : Arc<SegQueue<(bool,usize)>> = Arc::new(SegQueue::new());
+impl<State, Input, Output> BFSSolver<State, Input, Output>
+where State : Clone + std::marker::Sync + std::marker::Send + Default + 'static, Input : std::marker::Send + std::marker::Sync + Clone + 'static, Output : std::marker::Send + Clone + 'static + std::marker::Sync + Default + Hash + Eq
+{
+    fn create_workers(&self, thread_translator : Arc<Self>) -> (Arc<SegQueue<(State,usize)>>,Arc<SegQueue<(Output,usize)>>) {
+
+        let input : Arc<SegQueue<(State,usize)>> = Arc::new(SegQueue::new());
+        let output : Arc<SegQueue<(Output,usize)>> = Arc::new(SegQueue::new());
 
         for _ in 0..self.worker_threads {
             worker_thread(thread_translator.clone(), input.clone(), output.clone());
         }
         (input, output)
     }
-    fn terminate_workers(&self, input : Arc<SegQueue<(Vec<SymbolIdx>,usize)>>) {
+    fn terminate_workers(&self, input : Arc<SegQueue<(State,usize)>>) {
         for _ in 0..self.worker_threads {
-            input.push((vec![69, 42], usize::MAX))
+            input.push((State::default(), usize::MAX))
         }
     }
-    fn board_to_next_batch(&self,board : &Vec<SymbolIdx>, sig_set : &Vec<Vec<SymbolIdx>>,input : &Arc<SegQueue<(Vec<SymbolIdx>,usize)>>, output : &Arc<SegQueue<(bool,usize)>>) -> Vec<(BitVec,Vec<SymbolIdx>)> {
-        let mut results = Vec::with_capacity(self.rules.symbol_set.length);
-        for sym in 0..(self.rules.symbol_set.length as SymbolIdx) {
+    fn board_to_next_batch(&self,board : &State, sig_set : &Vec<Vec<SymbolIdx>>,input : &Arc<SegQueue<(State,usize)>>, output : &Arc<SegQueue<(Output,usize)>>) -> Vec<(Vec<Output>,State)> {
+        let mut results = Vec::with_capacity(self.symbol_set.length);
+        for sym in 0..(self.symbol_set.length as SymbolIdx) {
             let mut new_board = board.clone();
-            new_board.push(sym);
+            new_board = self.mutate(new_board, sym);
             results.push((self.sig_with_set_batch(&new_board,sig_set,input.clone(),output.clone()),new_board));
         }
         results
     }
-    fn sig_with_set_batch(&self, board : &Vec<SymbolIdx>, sig_set : &Vec<Vec<SymbolIdx>>, input : Arc<SegQueue<(Vec<SymbolIdx>,usize)>>, output : Arc<SegQueue<(bool,usize)>>) -> BitVec {
-        let mut result : BitVec = bitvec![0;sig_set.len()];
+    fn sig_with_set_batch(&self, board : &State, sig_set : &Vec<Vec<SymbolIdx>>, input : Arc<SegQueue<(State,usize)>>, output : Arc<SegQueue<(Output,usize)>>) -> Vec<Output> {
+        let mut result = vec![Output::default();sig_set.len()];
 
         for sig_element in sig_set.iter().enumerate() {
             let mut new_board = board.clone();
-            new_board.extend(sig_element.1);
+            for sig_in_element in sig_element.1{
+               new_board = self.mutate(new_board,*sig_in_element);
+            }
+            
             input.push((new_board,sig_element.0));
         }
         let mut results_recieved = 0;
         while results_recieved < sig_set.len() {
             match output.pop() {
                 Some(output_result) => {
-                    result.set(output_result.1,output_result.0); 
+                    result[output_result.1] = output_result.0; 
                     results_recieved+=1;
                 },
                 None => {std::thread::sleep(Duration::from_millis(10));}
@@ -203,6 +231,9 @@ impl BFSSolver {
         }
         result
     }
+}
+
+impl BFSSolver<Vec<SymbolIdx>,String,bool> where Self : SRSSolver{
     fn bfs_solver_batch(&self, start_board : &Vec<SymbolIdx>) -> bool { 
         let mut new_boards : Vec<Vec<SymbolIdx>> = vec![start_board.clone()];
         let mut old_boards : Vec<Vec<SymbolIdx>> = vec![];
@@ -212,7 +243,7 @@ impl BFSSolver {
             std::mem::swap(&mut old_boards, &mut new_boards);
             new_boards.clear();
             for board in &old_boards {
-                if self.goal.contains(board) {
+                if self.goal.as_ref().unwrap().contains(board) {
                     return true;
                 }
                 for new_board in self.single_rule_hash(board) {
@@ -227,16 +258,17 @@ impl BFSSolver {
     }
 }
 
-fn worker_thread(translator : Arc<BFSSolver>, input : Arc<SegQueue<(Vec<SymbolIdx>,usize)>>, output : Arc<SegQueue<(bool,usize)>>) -> thread::JoinHandle<()> {
+fn worker_thread<State, Input,Output>(translator : Arc<BFSSolver<State, Input,Output>>, input : Arc<SegQueue<(State,usize)>>, output : Arc<SegQueue<(Output,usize)>>) -> thread::JoinHandle<()> 
+where State : Clone + std::marker::Sync + std::marker::Send + 'static, Input : std::marker::Send + std::marker::Sync + Clone + 'static, Output : std::marker::Send + std::marker::Sync + Clone + 'static{
     thread::spawn(move || {
         loop {
             match input.pop() {
                 Some(input_string) => 
                 {
-                    if input_string.1 == usize::MAX && input_string.0 == vec![69,42] {
+                    if input_string.1 == usize::MAX {
                         return;
                     }
-                    let result = translator.bfs_solver_batch(&input_string.0);
+                    let result = (translator.evaluator)(&translator,&input_string.0);
                     output.push((result,input_string.1));
                 }
                 None => {}//{std::thread::sleep(time::Duration::from_millis(10));}

@@ -6,12 +6,19 @@ use super::{SymbolIdx, SymbolSet};
 #[derive(Debug,Clone,PartialEq,Eq)]
 pub struct Ruleset {
     pub rules : HashMap<Vec<SymbolIdx>,Vec<Vec<SymbolIdx>>>,
-    pub symbol_set : SymbolSet
+    pub symbol_set : SymbolSet,
+    pub max_input : usize,
+    pub min_input : usize
 }
 
 impl Ruleset {
     pub fn new(rules : HashMap<Vec<SymbolIdx>,Vec<Vec<SymbolIdx>>>, symbol_set : SymbolSet) -> Self {
-        Ruleset {rules : rules, symbol_set : symbol_set}
+        Ruleset {
+            symbol_set : symbol_set, 
+            max_input : rules.keys().max_by_key(|x|{x.len()}).unwrap().len(),
+            min_input : rules.keys().min_by_key(|x|{x.len()}).unwrap().len(),
+            rules : rules, 
+        }
     }
 
     pub fn from_vec(rules : Vec<(Vec<SymbolIdx>,Vec<SymbolIdx>)>, symbol_set : SymbolSet) -> Self {
@@ -23,7 +30,8 @@ impl Ruleset {
                 None => {rule_hash.insert(i.0.clone(), vec![i.1.clone()]);}
             }
         }
-        Ruleset { rules: rule_hash, symbol_set: symbol_set }
+        Ruleset { rules: rule_hash, symbol_set: symbol_set,max_input : rules.iter().max_by_key(|x|{x.0.len()}).unwrap().0.len(),
+        min_input : rules.iter().min_by_key(|x|{x.0.len()}).unwrap().0.len() }
     }
     pub fn from_string(input_str : &str) -> Self {
         let mut rules_str : HashMap<Vec<&str>,Vec<Vec<&str>>> = HashMap::new();
@@ -93,7 +101,8 @@ impl Ruleset {
         }
     
     
-        Ruleset {rules: rules, symbol_set: sym_set}
+        Ruleset {symbol_set: sym_set,max_input : rules.keys().max_by_key(|x|{x.len()}).unwrap().len(),
+        min_input : rules.keys().min_by_key(|x|{x.len()}).unwrap().len(), rules: rules}
     }
 
     pub fn expand_to_symset(&mut self,  expanded_ss : SymbolSet) {

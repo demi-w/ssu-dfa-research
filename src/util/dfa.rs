@@ -7,15 +7,31 @@ use serde_json::{value::Index, Result};
 use bitvec::prelude::*;
 use std::io::Write;
 
+
 #[derive(Clone,Serialize,Deserialize)]
-pub struct DFA<Output = bool, const OutputVariants : usize = 2> 
-    where Output : Clone + Serialize + Ord
+pub struct DFA<Input = String, Output = bool>
 {
     pub starting_state : usize,
     pub state_transitions : Vec<Vec<usize>>,
     pub accepting_states : Vec<Output>, //I really do like rust -- however, trying to allow for either bitvec or
                                         //vec stopped progress for 2 weeks
-    pub symbol_set : SymbolSet
+    pub symbol_set : SymbolSet<Input>
+}
+
+trait GetDiscriminant {
+    fn discriminant (&self) -> usize;
+    const DISCRIMINANT_LEN : usize;
+}
+
+impl GetDiscriminant for bool {
+    fn discriminant (&self) -> usize {
+        if *self {
+            1
+        } else {
+            0
+        }
+    }
+    const DISCRIMINANT_LEN : usize = 2;
 }
 enum JFLAPTrans {
     From,
@@ -35,7 +51,9 @@ type File = FileHandle;
 #[cfg(target_arch = "wasm32")]
 use wasm_bindgen_futures;
 
-impl<Output> PartialOrd for DFA<Output> where Output : Clone + Serialize + Ord
+use super::symset;
+
+impl<Input, Output> PartialOrd for DFA<Input, Output> where Output : PartialOrd
 {
     fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
         let mut stack = vec![(self.starting_state,other.starting_state)];
@@ -74,8 +92,8 @@ impl<Output> PartialOrd for DFA<Output> where Output : Clone + Serialize + Ord
     }
 }
 
-impl<O> std::ops::Not for &DFA<O> where O : std::ops::Not<Output = O> + Clone + Serialize + Ord{
-    type Output = DFA<O>;
+impl<I,O> std::ops::Not for &DFA<I,O> where O : Clone + std::ops::Not<Output = O>, DFA<I, O> : Clone{
+    type Output = DFA<I,O>;
     fn not(self) -> Self::Output {
         let mut clone = self.clone();
         let mut inverted_accepting_states = Vec::new();
@@ -87,22 +105,22 @@ impl<O> std::ops::Not for &DFA<O> where O : std::ops::Not<Output = O> + Clone + 
     }
 }
 
-impl<O> std::ops::BitAnd for &DFA<O> where O : std::ops::BitAnd<Output = O> + Clone + Serialize + Ord {
-    type Output = DFA<O>;
+impl<I,O> std::ops::BitAnd for &DFA<I,O> where I : Clone, O : std::ops::BitAnd<Output = O> + Clone + Ord {
+    type Output = DFA<I, O>;
 
     fn bitand(self, rhs: Self) -> Self::Output {
         self.dfa_product(rhs, |s,o|{s.clone() & o.clone()})
     }
 }
-impl<O> std::ops::BitOr for &DFA<O> where O : std::ops::BitOr<Output = O> + Clone + Serialize + Ord {
-    type Output = DFA<O>;
+impl<I,O> std::ops::BitOr for &DFA<I,O> where I : Clone, O : std::ops::BitOr<Output = O> + Clone + Ord {
+    type Output = DFA<I,O>;
 
     fn bitor(self, rhs: Self) -> Self::Output {
         self.dfa_product(rhs, |s,o|{s.clone() | o.clone()})
     }
 }
-impl<O> std::ops::BitXor for &DFA<O> where O : std::ops::BitXor<Output = O> + Clone + Serialize + Ord  {
-    type Output = DFA<O>;
+impl<I,O> std::ops::BitXor for &DFA<I,O> where I : Clone, O : std::ops::BitXor<Output = O> + Clone + Ord  {
+    type Output = DFA<I,O>;
 
     fn bitxor(self, rhs: Self) -> Self::Output {
         self.dfa_product(rhs, |s,o|{s.clone() ^ o.clone()})
@@ -110,8 +128,8 @@ impl<O> std::ops::BitXor for &DFA<O> where O : std::ops::BitXor<Output = O> + Cl
 }
 
 
-impl<O> std::ops::Sub for &DFA<O> where O : std::ops::Sub<Output = O> + Clone + Serialize + Ord {
-    type Output = DFA<O>;
+impl<I, O> std::ops::Sub for &DFA<I, O> where I : Clone, O : std::ops::Sub<Output = O> + Clone + Ord {
+    type Output = DFA<I, O>;
 
     fn sub(self, rhs: Self) -> Self::Output {
         self.dfa_product(rhs, |s,o|{s.clone() - o.clone()})
@@ -318,9 +336,9 @@ impl DFA {
         Self::load_jflap_from_string(&contents)
     }
 }
-impl<O> DFA<O> where O : Clone + Serialize + Ord {
+impl<I,O> DFA<I,O> where I : Clone, O : Clone + Ord {
 
-    pub fn dfa_product<F> (&self, other : &DFA<O>, accepting_rule : F) -> Self where F : Fn(&O, &O) -> O {
+    pub fn dfa_product<F> (&self, other : &DFA<I,O>, accepting_rule : F) -> Self where F : Fn(&O, &O) -> O {
         let mut stored_idxs = vec![(self.starting_state,other.starting_state)];
         let mut transition_table = vec![];
         let mut accepting_states = vec![];
@@ -582,7 +600,7 @@ impl<O> DFA<O> where O : Clone + Serialize + Ord {
     //pub fn one_rule_expand(&self, rules : &Ruleset) -> DFA{ return self.clone()}
 }
 
-impl<'de,O> DFA<O> where O : Clone + Serialize + Ord + DeserializeOwned {
+impl<'de,I,O> DFA<I,O> where I : Clone + Serialize + DeserializeOwned, O : Clone + Serialize + Ord + DeserializeOwned {
     #[cfg(not(target_arch = "wasm32"))]
     pub fn load(file : &mut File) -> Result::<Self> {
         use std::io::BufReader;
@@ -595,7 +613,7 @@ impl<'de,O> DFA<O> where O : Clone + Serialize + Ord + DeserializeOwned {
     }
 }
 
-impl <O> PartialEq for DFA<O> where O : Clone + Serialize + Ord  {
+impl <I,O> PartialEq for DFA<I, O> where O : PartialEq  {
     fn eq(&self, other: &Self) -> bool {
         let mut stack = vec![(self.starting_state,other.starting_state)];
         let mut visited = HashSet::new();

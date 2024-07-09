@@ -5,7 +5,7 @@ use petgraph::{prelude::DiGraph, graph::NodeIndex, Direction, algo::toposort};
 
 use crate::{util::{DFA, Ruleset, SymbolIdx}, solver::{DFAStructure, SSStructure}};
 
-use super::{Solver, Instant, DomainError};
+use super::{srssolver::DomainError, Instant, SRSSolver, Solver};
 
 
 
@@ -21,14 +21,8 @@ pub struct SubsetSolver {
     unique_sigs : HashMap<BitVec,usize>
 }
 
-impl Solver for SubsetSolver {
 
-    fn get_max_input(&self) -> usize {
-        self.max_input
-    }
-    fn get_min_input(&self) -> usize {
-        self.min_input
-    }
+impl SRSSolver for SubsetSolver {
 
     fn get_goal(&self) -> &DFA {
         &self.goal
@@ -52,26 +46,36 @@ impl Solver for SubsetSolver {
         let (min_input, max_input) = SubsetSolver::sized_init(&ruleset);
         Ok(SubsetSolver { goal: goal, rules: ruleset, sig_sets : vec![], solved_yet : vec![] , trans_table : vec![], min_input : min_input, max_input : max_input, unique_sigs : HashMap::new() })
     }
-    fn get_phases() -> Vec<String> {
-        vec!["Rule graph generation".to_owned(), "Sig set generation".to_owned(),"Uniqueness checks".to_owned(), "Clean up".to_owned()]
-    }
+
 
     fn get_ruleset(&self) -> &Ruleset{
         &self.rules
+    }
+}
+
+
+impl Solver for SubsetSolver {
+    const PHASES : &'static [&'static str] = &["Rule graph generation", "Sig set generation","Uniqueness checks", "Clean up"];
+
+    fn evaluate<'a,'b>(&'a self, state : &'b Vec<u8>) -> bool {
+        todo!()
+    }
+
+    fn mutate(&self, state : Vec<u8>, input : SymbolIdx) -> Vec<u8> {
+        todo!()
     }
 
     fn run_internal(mut self,
         sig_k : usize, 
         is_debug : bool,
         dfa_events : std::sync::mpsc::Sender<(DFAStructure,SSStructure)>, 
-        phase_events : std::sync::mpsc::Sender<std::time::Duration>) -> DFA {
+        phase_events : std::sync::mpsc::Sender<std::time::Duration>, origin : Vec<SymbolIdx>) -> DFA {
 
-        
     let init_begin_time = Instant::now();
     //graph of connections based on LHS->RHS links for all states
     //Usize is index in trans_table
     
-    
+    assert!(core::cmp::PartialEq::<Vec<u8>>::eq(&origin, &vec![]), "doesn't support non-null origin (sorry!)");
     let sig_set = &self.rules.symbol_set.build_sig_k(sig_k);
 
     //not allowed to complain about my dumb code -- not everything will be optimal i have DEADLINES.

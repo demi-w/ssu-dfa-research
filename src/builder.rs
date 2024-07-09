@@ -1,6 +1,6 @@
 use std::collections::HashSet;
 
-use crate::{util::{DFA, SymbolSet, Ruleset, SymbolIdx}, solver::Solver};
+use crate::{solver::{DomainError, SRSSolver, Solver}, util::{Ruleset, SymbolIdx, SymbolSet, DFA}};
 
 pub fn build_1dpeg_result() -> DFA {
     let mut accepting_vec = vec![false;18];
@@ -383,17 +383,17 @@ pub fn build_default2dpegx3_rs() -> Ruleset {
     Ruleset::from_vec(new_rules,by_k_symbol_set.clone())
 }
 
-pub fn build_threerulesolver<S>() -> Result<S, crate::solver::DomainError> where S: Solver {
+pub fn build_threerulesolver<S>() -> Result::<S,DomainError> where S: SRSSolver {
     S::new(build_threerulesolver_rs(),build_onlyone2())
 }
 
-pub fn build_defaultsolver<S>() -> Result<S, crate::solver::DomainError> where S: Solver {
+pub fn build_defaultsolver<S>() -> Result::<S,DomainError> where S: SRSSolver {
     S::new(build_defaultsolver_rs(),build_onlyone2())
 }
 
 
 
-pub fn build_2xnswap<S>() -> Result<S, crate::solver::DomainError> where S: Solver {
+pub fn build_2xnswap<S>() -> Result::<S,DomainError> where S: SRSSolver {
     let symbol_set = SymbolSet {
         length : 3,
         representations : vec!["0".to_owned(),"1".to_owned(),"2".to_owned()]
@@ -418,22 +418,22 @@ pub fn build_2xnswap<S>() -> Result<S, crate::solver::DomainError> where S: Solv
      S::new(ruleset,goal_dfa)
 }
 
-pub fn build_default1dpeg<S>() -> Result<S, crate::solver::DomainError> where S: Solver {
+pub fn build_default1dpeg<S>() -> Result::<S,DomainError> where S : SRSSolver {
     S::new(build_1dpeg_rs(),build_onlyone1())
 }
 
-pub fn build_threerule1dpeg<S>() -> Result<S, crate::solver::DomainError> where S: Solver {
+pub fn build_threerule1dpeg<S>() -> Result::<S,DomainError> where S : SRSSolver {
     S::new(build_threerule1dpeg_rs(),build_onlyone1())
 }
 
-pub fn build_flip<S>() -> Result<S, crate::solver::DomainError> where S: Solver {
+pub fn build_flip<S>() -> Result::<S,DomainError> where S : SRSSolver {
     S::new(build_flip_rs(),build_all0())
 }
 
-pub fn build_flipx3<S>() -> Result<S, crate::solver::DomainError> where S: Solver {
+pub fn build_flipx3<S>() -> Result::<S,DomainError> where S : SRSSolver {
     S::new(build_flipx3_rs(),build_all000())
 }
 
-pub fn build_default2dpegx3<S>() -> Result<S, crate::solver::DomainError> where S: Solver {
+pub fn build_default2dpegx3<S>() -> Result::<S,DomainError> where S : SRSSolver {
     S::new(build_default2dpegx3_rs(),build_2dpeg_goal())
 }

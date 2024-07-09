@@ -86,10 +86,10 @@ fn ruleset_parsing() {
     assert!(solve_test.get_ruleset() == &Ruleset::from_string(&solve_test.get_ruleset().to_string()),"threerulesolver ruleset failed to recreate itself");
 }
 
-fn assert_k<S>(solver : &S, k : usize, test_string : &str) where S : Solver {
-    let final_dfa = solver.run(k);
+fn assert_k<S>(solver : &S, k : usize, test_string : &str) where S : SRSSolver {
+    let final_dfa = solver.run(k, vec![]);
     for bad_k in 1..k {
-        let bad_dfa = solver.run(bad_k);
+        let bad_dfa = solver.run(bad_k, vec![]);
         let is_superset = solver.is_superset(&bad_dfa).is_ok();
         assert!((bad_dfa >= final_dfa) as usize >= is_superset as usize, "Incorrectly deemed superset for {} when k = {}",test_string, bad_k);
         let is_correct = solver.is_correct(&bad_dfa);

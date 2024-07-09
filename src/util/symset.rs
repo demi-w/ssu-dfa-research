@@ -2,11 +2,36 @@ use serde::{Serialize,Deserialize};
 pub type SymbolIdx = u8;
 
 #[derive(Clone,Serialize,Deserialize, PartialEq, Eq,Debug)]
-pub struct SymbolSet<Output = String> where Output : std::fmt::Display {
+pub struct SymbolSet<PrettyInput = String> {
     pub length : usize,
-    pub representations : Vec<Output>
+    pub representations : Vec<PrettyInput>
 }
-impl<Output> SymbolSet<Output> where Output : std::fmt::Display {
+
+impl<PrettyInput> SymbolSet<PrettyInput> where PrettyInput : std::fmt::Display {
+    pub fn symbols_to_string(&self, symbols : &Vec<SymbolIdx>) -> String{
+        let mut string = "".to_owned();
+        for sym in symbols {
+            string += &format!("{} ", self.representations[*sym as usize]);
+        }
+        string.pop();
+        string
+    }
+    pub fn string_to_symbols(&self, symbols : &Vec<&str>) -> Result<Vec<SymbolIdx>,usize>{
+        let mut syms = vec![];
+        for (idx,str) in symbols.iter().enumerate() {
+            if str == &"" {
+                continue
+            }
+            match self.representations.iter().position(|r| &format!("{}",r) == str) {
+                Some(sym) => {syms.push(sym as SymbolIdx)},
+                None => {return Err(idx)}
+            }
+            
+        }
+        Ok(syms)
+    }
+}
+impl<PrettyInput> SymbolSet<PrettyInput> {
     pub fn new(mut representations : Vec<String>) -> SymbolSet{
         representations.sort();
         SymbolSet { length: representations.len(), representations: representations }
@@ -52,29 +77,11 @@ impl<Output> SymbolSet<Output> where Output : std::fmt::Display {
         }
         signature_set
     }
-    pub fn symbols_to_string(&self, symbols : &Vec<SymbolIdx>) -> String{
-        let mut string = "".to_owned();
-        for sym in symbols {
-            string += &format!("{} ", self.representations[*sym as usize]);
-        }
-        string.pop();
-        string
-    }
-    pub fn string_to_symbols(&self, symbols : &Vec<&str>) -> Result<Vec<SymbolIdx>,usize>{
-        let mut syms = vec![];
-        for (idx,str) in symbols.iter().enumerate() {
-            if str == &"" {
-                continue
-            }
-            match self.representations.iter().position(|r| r == str) {
-                Some(sym) => {syms.push(sym as SymbolIdx)},
-                None => {return Err(idx)}
-            }
-            
-        }
-        Ok(syms)
-    }
-    pub fn is_subset(&self, other : &Self) -> bool {
+
+}
+
+impl<PrettyInput> SymbolSet<PrettyInput> where PrettyInput : std::cmp::PartialEq {
+    pub fn is_subset(&self, other : &SymbolSet<PrettyInput>) -> bool {
         //Isn't this wonderful? Exactly how set theory defines it :3
         self.representations.iter().all(|x| other.representations.iter().any(|y| x == y))
     }

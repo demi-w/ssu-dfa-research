@@ -9,7 +9,8 @@ use petgraph::{graph::{DiGraph,NodeIndex}, algo::{condensation, toposort}, Graph
 
 use crate::util::{Ruleset, DFA, SymbolIdx};
 
-use super::{Solver, DFAStructure, SSStructure, Instant, DomainError};
+use super::{DFAStructure, Instant, SRSSolver, SSStructure, Solver};
+use crate::solver::srssolver::DomainError;
 
 #[derive(Debug,Clone, Default)]
 struct SignatureSetElement {
@@ -46,23 +47,9 @@ struct MKDFAState {
     goal_states : Vec<usize>
 }
 
-
-
-impl Solver for MinkidSolver {
-
-    fn get_max_input(&self) -> usize {
-        self.max_input
-    }
-    fn get_min_input(&self) -> usize {
-        self.min_input
-    }
-
+impl SRSSolver for MinkidSolver {
     fn get_goal(&self) -> &DFA {
         &self.goal
-    }
-
-    fn get_phases() -> Vec<String> {
-        vec!["Build rule graph".to_owned(),"Propagate pure links".to_owned(), "Propagate minkids".to_owned(), "Remove duplicates".to_owned()]
     }
 
     fn new(mut ruleset : Ruleset, mut goal : DFA) -> Result<Self,DomainError> {
@@ -74,18 +61,31 @@ impl Solver for MinkidSolver {
     fn get_ruleset(&self) -> &Ruleset{
         &self.rules
     }
+}
+
+impl Solver for MinkidSolver {
+    
+    const PHASES : &'static [&'static str] = &["Build rule graph","Propagate pure links", "Propagate minkids", "Remove duplicates"];
+    
+    fn evaluate<'a,'b>(&'a self, state : &'b Vec<u8>) -> bool {
+        todo!();
+    }
+
+    fn mutate(&self, state : Vec<u8>, input : SymbolIdx) -> Vec<u8> {
+        todo!();
+    }
 
     fn run_internal(mut self,
                         sig_k : usize, 
                         is_debug : bool,
                         dfa_events : std::sync::mpsc::Sender<(DFAStructure,SSStructure)>, 
-                        phase_events : std::sync::mpsc::Sender<std::time::Duration>) -> DFA {
+                        phase_events : std::sync::mpsc::Sender<std::time::Duration>, origin : Vec<SymbolIdx>) -> DFA {
         
     let init_begin_time = Instant::now();
     //graph of connections based on LHS->RHS links for all states
     //Usize is index in trans_table
 
-    
+    assert!(core::cmp::PartialEq::<Vec<u8>>::eq(&origin, &vec![]), "doesn't support non-null origin (sorry!)");
     
     let sig_set = &self.rules.symbol_set.build_sig_k(sig_k);
     self.build_ss_link_graph(sig_set);
