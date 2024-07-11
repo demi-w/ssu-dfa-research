@@ -38,6 +38,9 @@ impl SRSSolver for HashSolver {
 
 
 impl Solver for HashSolver {
+    fn get_symset(&self) -> &crate::SymbolSet {
+        &self.rules.symbol_set
+    }
     const PHASES : &'static [&'static str] = &["Entire Iteration"];
     fn evaluate<'a,'b>(&'a self, state : &'b Vec<u8>) -> bool {
         todo!()

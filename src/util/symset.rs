@@ -7,6 +7,36 @@ pub struct SymbolSet<PrettyInput = String> {
     pub representations : Vec<PrettyInput>
 }
 
+pub struct SymbolSetIter<'a, PrettyInput = String> {
+     symset : &'a SymbolSet<PrettyInput>,
+     k : usize,
+     cur_vec : Vec<SymbolIdx>
+}
+
+impl<'a, PrettyInput> Iterator for SymbolSetIter<'a,PrettyInput> {
+    type Item = Vec<SymbolIdx>;
+    
+    fn next(&mut self) -> Option<Self::Item> {
+        let result = if self.cur_vec.len() > self.k {
+            None
+        } else {
+            Some(self.cur_vec.clone())
+        };
+        let mut rollover = self.cur_vec.len();
+        while rollover > 0 && self.cur_vec[rollover - 1] == (self.symset.length - 1) as u8 {
+            self.cur_vec[rollover - 1] = 0;
+            rollover-=1;
+        }
+        if rollover > 0 {
+            self.cur_vec[rollover - 1] += 1;
+        } else {
+            self.cur_vec.push(0);
+        }
+        result
+    }
+    
+}
+
 impl<PrettyInput> SymbolSet<PrettyInput> where PrettyInput : std::fmt::Display {
     pub fn symbols_to_string(&self, symbols : &Vec<SymbolIdx>) -> String{
         let mut string = "".to_owned();
@@ -37,6 +67,21 @@ impl<PrettyInput> SymbolSet<PrettyInput> {
         SymbolSet { length: representations.len(), representations: representations }
     }
 
+    pub fn sig_set_size(&self, k : usize) -> usize {
+        let mut result = 0;
+        for i in 0..k {
+            result += self.length.pow(i as u32);
+        }
+        result
+    }
+
+    pub fn sig_set_iter(&self, k : usize) -> SymbolSetIter<PrettyInput> {
+        SymbolSetIter {
+            symset: self,
+            k,
+            cur_vec: vec![],
+        }
+    }
     //Returns the appropriate index for a certain string
     pub fn find_in_sig_set<'a>(&self, string : impl Iterator<Item = &'a SymbolIdx>) -> usize
     {
@@ -86,3 +131,4 @@ impl<PrettyInput> SymbolSet<PrettyInput> where PrettyInput : std::cmp::PartialEq
         self.representations.iter().all(|x| other.representations.iter().any(|y| x == y))
     }
 }
+

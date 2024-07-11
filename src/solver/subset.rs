@@ -353,6 +353,10 @@ impl Solver for SubsetSolver {
             symbol_set : self.rules.symbol_set.clone()
         }
     }
+    
+    fn get_symset(&self) -> &crate::SymbolSet {
+        &self.rules.symbol_set
+    }
 }
 
 impl SubsetSolver {

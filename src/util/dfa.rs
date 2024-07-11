@@ -600,7 +600,7 @@ impl<I,O> DFA<I,O> where I : Clone, O : Clone + Ord {
     //pub fn one_rule_expand(&self, rules : &Ruleset) -> DFA{ return self.clone()}
 }
 
-impl<'de,I,O> DFA<I,O> where I : Clone + Serialize + DeserializeOwned, O : Clone + Serialize + Ord + DeserializeOwned {
+impl<'de,I,O> DFA<I,O> where I : Clone + Serialize + DeserializeOwned, O : Clone + Serialize + DeserializeOwned {
     #[cfg(not(target_arch = "wasm32"))]
     pub fn load(file : &mut File) -> Result::<Self> {
         use std::io::BufReader;

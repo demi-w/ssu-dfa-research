@@ -57,6 +57,9 @@ where State : Clone + 'static + std::marker::Send + std::marker::Sync + Default,
 Input : std::marker::Send + std::marker::Sync + Clone + 'static, 
 Output : std::marker::Send + std::marker::Sync + Clone + 'static + Default + std::hash::Hash + Eq{
     const PHASES : &'static [&'static str] = &["Entire Iteration"];
+    fn get_symset(&self) -> &crate::SymbolSet<Input> {
+        &self.symbol_set
+    }
     fn mutate(&self, state : State, input : SymbolIdx) -> State {
         (self.mutator)(&self, state, input)
     }

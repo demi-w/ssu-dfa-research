@@ -65,6 +65,9 @@ impl SRSSolver for MinkidSolver {
 
 impl Solver for MinkidSolver {
     
+    fn get_symset(&self) -> &crate::SymbolSet {
+        &self.rules.symbol_set
+    }
     const PHASES : &'static [&'static str] = &["Build rule graph","Propagate pure links", "Propagate minkids", "Remove duplicates"];
     
     fn evaluate<'a,'b>(&'a self, state : &'b Vec<u8>) -> bool {
@@ -72,7 +75,7 @@ impl Solver for MinkidSolver {
     }
 
     fn mutate(&self, state : Vec<u8>, input : SymbolIdx) -> Vec<u8> {
-        todo!();
+        SRSSolver::mutate(self, state, input)
     }
 
     fn run_internal(mut self,

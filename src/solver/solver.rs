@@ -1,4 +1,4 @@
-use std::{collections::{HashMap, HashSet, VecDeque}, fmt::write, hash::Hash, io::{self, Write}, path::{self, Display}, sync::mpsc::{channel, Receiver, Sender}};
+use std::{collections::{HashMap, HashSet, VecDeque}, fmt::write, hash::Hash, io::{self, Write}, marker::PhantomData, path::{self, Display}, sync::mpsc::{channel, Receiver, Sender}};
 
 use std::thread;
 
@@ -89,7 +89,69 @@ pub trait Solver<State = Vec<SymbolIdx>, Input = String, Output = bool> where
         }
         run_handle.join().unwrap()
     }
-
+    fn get_symset(&self) -> &SymbolSet<Input>;
     fn mutate(&self, state : State, input : SymbolIdx) -> State;
     fn evaluate<'a,'b>(&'a self, state : &'b State) -> Output;
+    fn get_sig_set<'a>(&'a self, origin : State, k : usize) -> StateIter<Self, State, Input, Output> {
+        StateIter {
+            solver : self,
+            k : k,
+            cur_vec : vec![],
+            cur_states : vec![origin],
+            pi : Default::default(),
+            po : Default::default()
+        }
+    }
+}
+
+#[derive(Clone)]
+pub struct StateIter<'a,Solver, State, Input, Output> where 
+State : std::marker::Send + 'static,
+Output : Clone + std::marker::Send + 'static, 
+Input : Clone + std::marker::Send + 'static,
+Solver : crate::solver::Solver<State, Input, Output> {
+    solver : &'a Solver,
+    k : usize,
+    cur_vec : Vec<SymbolIdx>,
+    cur_states : Vec<State>,
+    pi : PhantomData<Input>,
+    po : PhantomData<Output>
+}
+
+impl<'a,Solver, State, Input, Output> Iterator for StateIter <'a,Solver, State, Input, Output> where  
+State : std::marker::Send + 'static + Clone,
+Output : Clone + std::marker::Send + 'static, 
+Input : Clone + std::marker::Send + 'static,
+Solver : crate::solver::Solver<State, Input, Output>  {
+    type Item = State;
+    fn next(&mut self) -> Option<Self::Item> {
+        let result = if self.cur_vec.len() > self.k {
+            None
+        } else {
+            Some(self.cur_states.last().unwrap().clone())
+        };
+        let mut rollover = self.cur_vec.len();
+        while rollover > 0 && self.cur_vec[rollover - 1] == (self.solver.get_symset().length - 1) as u8 {
+            self.cur_vec[rollover - 1] = 0;
+            rollover-=1;
+        }
+        if rollover > 0 {
+            self.cur_vec[rollover - 1] += 1;
+        } else {
+            self.cur_vec.push(0);
+
+            //This gets overwritten so we can fill it with w/e
+            self.cur_states.push(self.cur_states[0].clone());
+        }
+        let start = if rollover > 0 {
+            rollover - 1
+        } else {
+            0
+        };
+        for i in start..self.cur_vec.len() {
+            self.cur_states[i+1] = self.solver.mutate(self.cur_states[i].clone(), self.cur_vec[i]);
+        }
+
+        result
+    }
 }
