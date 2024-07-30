@@ -10,6 +10,7 @@ rfd = {version = "0.12.0"}
 eframe = {version = "0.22.0"}
 srs_to_dfa = { version = "0.9", path = "../" }
 serde_json = "1.0"
+async-std = "1.12.0"
 
 [target.'cfg(not(target_arch = "wasm32"))'.dependencies]
 futures = "0.3.28"

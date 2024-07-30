@@ -2,7 +2,7 @@ use std::{sync::mpsc::{Sender,Receiver}, thread::JoinHandle, time::Duration};
 
 use egui::{Ui, Color32, RichText};
 
-use srs_to_dfa::{solver::{DFAStructure,MinkidSolver, SSStructure, Solver, SubsetSolver, BFSSolver, HashSolver}, util::{DFA, Ruleset, SymbolIdx, SymbolSet}};
+use srs_to_dfa::{solver::{DFAStructure,MinkidSolver, SSStructure, Solver, SRSSolver, SubsetSolver, BFSSolver, HashSolver}, util::{DFA, Ruleset, SymbolIdx, SymbolSet}};
 
 use super::{Instant,execute};
 
@@ -207,14 +207,14 @@ impl DFAConstructor{
 
     #[cfg(not(target_arch = "wasm32"))]
     fn run_dfa_arch<S>(&mut self, solver : S, k : usize) where S : Solver{
-        let (dfa_rx, phase_rx, temp_h) = solver.run_debug(k); 
+        let (dfa_rx, phase_rx, temp_h) = solver.run_debug(k,vec![]); 
         self.dfa_reciever = Some(dfa_rx);
         self.phase_reciever = Some(phase_rx);
         self.handle = Some(temp_h);
     }
     #[cfg(target_arch = "wasm32")]
     fn run_dfa_arch<S>(&mut self, solver : S, k : usize) where S : Solver{
-        let (dfa_rx, phase_rx) = solver.run_debug(k); 
+        let (dfa_rx, phase_rx) = solver.run_debug(k,vec![]); 
         self.dfa_reciever = Some(dfa_rx);
         self.phase_reciever = Some(phase_rx);
     }

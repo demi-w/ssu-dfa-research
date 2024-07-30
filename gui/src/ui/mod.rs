@@ -1,5 +1,6 @@
 use std::{sync::mpsc::{Receiver, Sender}, fmt::Display};
 use rfd::FileHandle;
+
 use async_std::task;
 mod prep_panel;
 pub use prep_panel::PrepPanel;
@@ -44,12 +45,12 @@ pub enum AvailableSolver {
 
 //This is an unfortunate hack as dynamic dispatch would completely change the way that solvers are run
 impl AvailableSolver {
-    fn get_phases(&self) -> Vec<String> {
+    fn get_phases(&self) -> &[&str] {
         match self {
-            AvailableSolver::Minkid => MinkidSolver::get_phases(),
-            AvailableSolver::Subset => SubsetSolver::get_phases(),
-            AvailableSolver::BFS => BFSSolver::get_phases(),
-            AvailableSolver::Hash => HashSolver::get_phases()
+            AvailableSolver::Minkid => MinkidSolver::PHASES,
+            AvailableSolver::Subset => SubsetSolver::PHASES,
+            AvailableSolver::BFS => <BFSSolver as Solver>::PHASES,
+            AvailableSolver::Hash => HashSolver::PHASES
         }
     }
 }
