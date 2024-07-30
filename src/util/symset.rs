@@ -41,11 +41,12 @@ where
     PrettyInput: std::fmt::Display,
 {
     pub fn symbols_to_string(&self, symbols: &Vec<SymbolIdx>) -> String {
-        let mut string = "".to_owned();
+        let mut string = "\"".to_owned();
         for sym in symbols {
             string += &format!("{} ", self.representations[*sym as usize]);
         }
         string.pop();
+        string.push('"');
         string
     }
     pub fn string_to_symbols(&self, symbols: &Vec<&str>) -> Result<Vec<SymbolIdx>, usize> {
@@ -77,7 +78,7 @@ impl<PrettyInput> SymbolSet<PrettyInput> {
 
     pub fn sig_set_size(&self, k: usize) -> usize {
         let mut result = 0;
-        for i in 0..k {
+        for i in 0..(k+1) {
             result += self.length.pow(i as u32);
         }
         result

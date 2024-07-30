@@ -12,3 +12,4 @@ Cargo.lock
 /playground
 *.DS_Store
 /gui/.vscode
+projectnotes

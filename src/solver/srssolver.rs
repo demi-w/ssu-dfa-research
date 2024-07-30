@@ -43,7 +43,7 @@ where
     }
 
     fn default_evaluator(&self, state: &Vec<SymbolIdx>) -> bool {
-        self.get_goal().contains(state)
+        todo!();
     }
 
     fn mutate(&self, mut state: Vec<SymbolIdx>, input: SymbolIdx) -> Vec<SymbolIdx> {
