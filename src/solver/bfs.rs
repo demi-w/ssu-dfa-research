@@ -46,7 +46,7 @@ impl SRSSolver for BFSSolver<Vec<SymbolIdx>, String, bool> {
             goal: Some(goal.clone()),
             symbol_set: goal.symbol_set.clone(),
             worker_threads: 32,
-            evaluator: SRSSolver::default_evaluator,
+            evaluator: Self::bfs_solver_batch,
             mutator: SRSSolver::MUTATOR,
         })
     }
