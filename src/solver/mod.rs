@@ -1,9 +1,18 @@
-
-use std::{collections::{HashMap, HashSet, VecDeque}, fmt::write, hash::Hash, io::{self, Write}, path::{self, Display}, sync::mpsc::{channel, Receiver, Sender}};
+use std::{
+    collections::{HashMap, HashSet, VecDeque},
+    fmt::write,
+    hash::Hash,
+    io::{self, Write},
+    path::{self, Display},
+    sync::mpsc::{channel, Receiver, Sender},
+};
 
 use std::thread;
 
-use crate::{util::{Ruleset, DFA, SymbolIdx, SymbolSet}, test};
+use crate::{
+    test,
+    util::{Ruleset, SymbolIdx, SymbolSet, DFA},
+};
 
 pub use self::events::*;
 mod events;
@@ -28,16 +37,17 @@ mod srssolver;
 pub use self::srssolver::*;
 mod genericsolver;
 pub use self::genericsolver::*;
-use petgraph::{graph::{DiGraph,NodeIndex}, visit::EdgeRef};
+use petgraph::{
+    graph::{DiGraph, NodeIndex},
+    visit::EdgeRef,
+};
 use serde::Serialize;
 #[cfg(target_arch = "wasm32")]
 pub use web_time::Instant;
 
-
 #[cfg(not(target_arch = "wasm32"))]
 pub use std::time::Instant;
 //
-
 
 /*
 method to solve a string
@@ -56,7 +66,7 @@ fn verify_to_len(&mut self,test_dfa : DFA, n:usize) -> bool{
     for i in 0..(n+1) {
         total_boards += (self.symbol_set.length as u64).pow(i as u32);
     }
-    
+
     println!("Starting DFA verification for strings <= {}. {} total boards",n, total_boards);
     let mut num_completed = 0;
     let mut num_accepting = 0;
@@ -101,7 +111,7 @@ fn verify_to_len(&mut self,test_dfa : DFA, n:usize) -> bool{
     }
     self.terminate_workers(input, WORKERS);
 
-        
+
     println!("All verified! {}% accepting",(num_accepting as f64) * 100.0 / (total_boards as f64));
 
     true
@@ -109,7 +119,7 @@ fn verify_to_len(&mut self,test_dfa : DFA, n:usize) -> bool{
 }
 fn random_tests(&mut self,test_dfa : DFA, n:usize, total_boards:usize){
     //almost certainly a constant time answer to this but idk and idc
-    
+
     println!("Starting DFA verification for {} strings of length {}.",total_boards, n);
     let mut num_completed = 0;
     let mut num_accepting = 0;
@@ -151,9 +161,8 @@ fn random_tests(&mut self,test_dfa : DFA, n:usize, total_boards:usize){
     }
     self.terminate_workers(input, WORKERS);
 
-        
+
     println!("All verified! {}% accepting",(num_accepting as f64) * 100.0 / (total_boards as f64));
 
 }
  */
-
