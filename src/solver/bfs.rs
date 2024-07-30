@@ -1,6 +1,7 @@
 use std::collections::{HashMap, HashSet};
 use std::hash::Hash;
-use std::sync::{mpsc::Sender, Arc};
+use std::ops::Range;
+use std::sync::{mpsc::{Sender,Receiver}, Arc};
 use std::thread;
 use std::time::Duration;
 
@@ -46,16 +47,24 @@ impl SRSSolver for BFSSolver<Vec<SymbolIdx>, String, bool> {
             goal: Some(goal.clone()),
             symbol_set: goal.symbol_set.clone(),
             worker_threads: 32,
-            evaluator: SRSSolver::default_evaluator,
+            evaluator: Self::bfs_solver_batch,
             mutator: SRSSolver::MUTATOR,
         })
     }
 }
 
+
+struct EvaluatedState<Output> {
+    origin_idx : usize,
+    sym_idx : SymbolIdx,
+    results : Vec<Output>,
+    chunks_received : usize,
+}
+
 #[async_trait]
 impl<State, Input, Output> Solver<State, Input, Output> for BFSSolver<State, Input, Output>
 where
-    State: Clone + 'static + std::marker::Send + std::marker::Sync + Default,
+    State: Clone + 'static + std::marker::Send + std::marker::Sync + Default + std::cmp::Eq + std::hash::Hash,
     Input: std::marker::Send + std::marker::Sync + Clone + 'static,
     Output:
         std::marker::Send + std::marker::Sync + Clone + 'static + Default + std::hash::Hash + Eq,
@@ -92,15 +101,18 @@ where
 
         let thread_translator: Arc<Self> = Arc::new(self.clone());
 
-        let (input, output) = self.create_workers(thread_translator.clone());
+        let mut new_state_to_ctx = HashMap::<State,EvaluatedState<Output>>::new();
+
+        let (mut input, output) = self.create_workers(thread_translator.clone());
 
         let mut empty_copy: Vec<usize> = Vec::new();
         for _ in 0..self.symbol_set.length {
             empty_copy.push(0);
         }
 
-        let start_accepting =
-            self.sig_with_set_batch(&origin, &sig_set, input.clone(), output.clone());
+        input.send(Dispatch{origin, k: sig_k, range : 0..self.symbol_set.sig_set_size(sig_k)});
+
+        let start_accepting = output.recv().unwrap().results;
         table_reference.insert(start_accepting.clone(), 0);
         trans_table.push(empty_copy.clone());
 
@@ -110,6 +122,7 @@ where
             let _ = phase_events.send(Instant::now() - init_begin_time);
         }
         while new_boards.len() > 0 {
+            new_state_to_ctx.clear();
             if is_debug {
                 //TODO: Genericize this
                 //dfa_events.send((DFAStructure::Dense(trans_table.clone()),SSStructure::BooleanMap(table_reference.clone()))).unwrap();
@@ -118,33 +131,76 @@ where
             std::mem::swap(&mut old_boards, &mut new_boards);
             new_boards.clear();
 
+            //dispatch all processing for worker threads 
+            let mut chunks_per_sig_set = old_boards.len() * self.symbol_set.length / self.worker_threads / 4;
+            if chunks_per_sig_set == 0 {
+                chunks_per_sig_set = 1;
+            }
+            let mut chunks_dispatched = 0;
+            let chunk_length = self.symbol_set.sig_set_size(sig_k) / chunks_per_sig_set;
             for (start_idx, board) in &old_boards {
-                //Finds ingoing end of board.
+                for sym_idx in 0..(self.symbol_set.length as SymbolIdx) {
+                    let new_board = self.mutate(board.clone(), sym_idx);
 
-                //Gets sig set of all boards with a single symbol added.
-                //TODO: Use pool of worker threads used with main-thread-blocking sig set requests.
-                //Change Translator to a trait and add a batch SRSTranslator and a hash SRSTranslator.
-                let next_results = self.board_to_next_batch(&board, &sig_set, &input, &output);
-                for (sym_idx, new_board) in next_results.iter().enumerate() {
-                    //Checking if the next board's sig set already exists in DFA
-                    let dest_idx = match table_reference.get(&new_board.0) {
+                    new_state_to_ctx.insert(new_board.clone(), EvaluatedState {origin_idx: *start_idx,
+                        sym_idx,
+                        results : vec![Output::default(); self.symbol_set.sig_set_size(sig_k)],
+                        chunks_received : 0
+                    });
+                    
+                    //First chunk takes the brunt of any divisibility issues so sig set elements aren't missing
+                    let mut chunk_cursor = chunk_length + self.symbol_set.sig_set_size(sig_k) % chunks_per_sig_set;
+                    input.send(Dispatch {
+                        origin : new_board.clone(),
+                        k : sig_k,
+                        range : 0..chunk_cursor
+                    });
+                    chunks_dispatched+=1;
+                    //dole out any additional chunks
+                    for chunk_idx in 1..chunks_per_sig_set {
+                        input.send(Dispatch {
+                            origin : new_board.clone(),
+                            k : sig_k,
+                            range : chunk_cursor..chunk_cursor + chunk_length
+                        });
+                        chunks_dispatched+=1;
+                        chunk_cursor += chunk_length;
+                    }
+                    assert!(chunk_cursor == self.symbol_set.sig_set_size(sig_k), "Internal chunking issue");
+                }
+            }    
+            // Collect results from worker threads + evaluate when appropriate
+            let mut chunks_collected = 0;
+            while chunks_collected < chunks_dispatched {
+                let collected_chunk = output.recv().unwrap();
+                chunks_collected += 1;
+                let eval_state = new_state_to_ctx.get_mut(&collected_chunk.origin).unwrap();
+                
+                //Copy in chunk info
+                eval_state.results[collected_chunk.range].clone_from_slice(&collected_chunk.results);
+                eval_state.chunks_received += 1;
+
+
+                if eval_state.chunks_received == chunks_per_sig_set {
+                //Checking if the next board's sig set already exists in DFA
+                    let dest_idx = match table_reference.get(&eval_state.results) {
                         //If it does, the arrow's obv going to the existing state in the DFA
                         Some(idx) => *idx,
                         //If it doesn't, add a new state to the DFA!
                         None => {
                             let new_idx = trans_table.len();
-                            new_boards.push((new_idx, new_board.1.clone()));
+                            new_boards.push((new_idx, collected_chunk.origin.clone()));
 
-                            table_reference.insert(new_board.0.clone(), new_idx);
+                            table_reference.insert(eval_state.results.clone(), new_idx);
                             trans_table.push(empty_copy.clone());
 
-                            state_outputs.push(thread_translator.evaluate(&new_board.1));
+                            state_outputs.push(thread_translator.evaluate(&collected_chunk.origin));
                             new_idx
                         }
                     };
-                    trans_table[*start_idx][sym_idx] = dest_idx;
-                }
+                trans_table[eval_state.origin_idx][eval_state.sym_idx as usize] = dest_idx;
             }
+        }
             if is_debug {
                 let dur = iter_begin_time.elapsed();
                 phase_events.send(dur).unwrap();
@@ -166,11 +222,17 @@ where
 
 impl<State, Input, Output> GenericSolver<State, Input, Output> for BFSSolver<State, Input, Output>
 where
-    State: Clone + 'static + std::marker::Send + std::marker::Sync + Default,
+    State: Clone + 'static + std::marker::Send + std::marker::Sync + Default + std::hash::Hash + Eq,
     Input: std::marker::Send + Clone + 'static + std::marker::Sync,
     Output:
         std::marker::Send + Clone + 'static + std::marker::Sync + Default + std::hash::Hash + Eq,
 {
+    fn set_mutator(&mut self, mutator: fn(&Self, state: State, input: SymbolIdx) -> State) {
+        self.mutator = mutator;
+    }
+    fn set_evaluator(&mut self, evaluator: fn(&Self, &State) -> Output) {
+        self.evaluator = evaluator;
+    }
     fn new(
         mutator: fn(&Self, State, SymbolIdx) -> State,
         evaluator: fn(&Self, &State) -> Output,
@@ -185,17 +247,11 @@ where
             evaluator: evaluator,
         }
     }
-    fn set_evaluator(&mut self, evaluator: fn(&Self, &State) -> Output) {
-        self.evaluator = evaluator;
-    }
-    fn set_mutator(&mut self, mutator: fn(&Self, state: State, input: SymbolIdx) -> State) {
-        self.mutator = mutator;
-    }
 }
 
 impl<State, Input, Output> BFSSolver<State, Input, Output>
 where
-    State: Clone + std::marker::Sync + std::marker::Send + Default + 'static,
+    State: Clone + std::marker::Sync + std::marker::Send + Default + 'static + Hash + Eq,
     Input: std::marker::Send + std::marker::Sync + Clone + 'static,
     Output: std::marker::Send + Clone + 'static + std::marker::Sync + Default + Hash + Eq,
 {
@@ -203,20 +259,20 @@ where
         &self,
         thread_translator: Arc<Self>,
     ) -> (
-        Arc<SegQueue<(State, usize)>>,
-        Arc<SegQueue<(Output, usize)>>,
+        spmc::Sender<Dispatch<State>>,
+        Receiver<DispatchResponse<State, Output>>,
     ) {
-        let input: Arc<SegQueue<(State, usize)>> = Arc::new(SegQueue::new());
-        let output: Arc<SegQueue<(Output, usize)>> = Arc::new(SegQueue::new());
+        let (mut input_tx, input_rx) = spmc::channel::<Dispatch<State>>();
+        let (mut output_tx, output_rx)= std::sync::mpsc::channel();
 
         for _ in 0..self.worker_threads {
-            worker_thread(thread_translator.clone(), input.clone(), output.clone());
+            worker_thread(thread_translator.clone(), input_rx.clone(), output_tx.clone());
         }
-        (input, output)
+        (input_tx, output_rx)
     }
-    fn terminate_workers(&self, input: Arc<SegQueue<(State, usize)>>) {
+    fn terminate_workers(&self, mut input: spmc::Sender<Dispatch<State>>) {
         for _ in 0..self.worker_threads {
-            input.push((State::default(), usize::MAX))
+            input.send(Dispatch{origin : State::default(), range : 0..usize::MAX, k : 0}).unwrap();
         }
     }
     fn board_to_next_batch(
@@ -298,28 +354,47 @@ where
     }
 }
 
+struct Dispatch<State> where
+State: Clone + std::marker::Sync + std::marker::Send + 'static {
+    origin : State,
+    k : usize,
+    range : Range<usize>
+}
+
+struct DispatchResponse<State, Output> where State: Clone + std::marker::Sync + std::marker::Send + 'static, Output: std::marker::Send + std::marker::Sync + Clone + 'static {
+    origin : State,
+    results : Vec<Output>,
+    range : Range<usize>
+}
+
+
 fn worker_thread<State, Input, Output>(
     translator: Arc<BFSSolver<State, Input, Output>>,
-    input: Arc<SegQueue<(State, usize)>>,
-    output: Arc<SegQueue<(Output, usize)>>,
+    input: spmc::Receiver<Dispatch<State>>,
+    output: Sender<DispatchResponse<State,Output>>,
 ) -> thread::JoinHandle<()>
 where
-    State: Clone + std::marker::Sync + std::marker::Send + 'static,
-    Input: std::marker::Send + std::marker::Sync + Clone + 'static,
-    Output: std::marker::Send + std::marker::Sync + Clone + 'static,
+State: Clone + 'static + std::marker::Send + std::marker::Sync + Default + Hash + Eq,
+Input: std::marker::Send + std::marker::Sync + Clone + 'static,
+Output: std::marker::Send + std::marker::Sync + Clone + 'static + Default + std::hash::Hash + Eq,
 {
     thread::spawn(move || {
-        loop {
-            match input.pop() {
-                Some(input_string) => {
-                    if input_string.1 == usize::MAX {
-                        return;
-                    }
-                    let result = (translator.evaluator)(&translator, &input_string.0);
-                    output.push((result, input_string.1));
-                }
-                None => {} //{std::thread::sleep(time::Duration::from_millis(10));}
+    loop {
+            let dispatch = input.recv().unwrap();
+            if dispatch.range.end == usize::MAX {
+                return;
             }
+            let mut sig_set_iter = translator.get_sig_set(dispatch.origin.clone(),dispatch.k).clone();
+            let mut sig_set_iter = sig_set_iter.skip(dispatch.range.start);
+            let mut result_vec = vec![];
+            for _ in dispatch.range.clone() {
+                result_vec.push((translator.evaluator)(&translator, &sig_set_iter.next().unwrap()));
+            }
+            output.send(DispatchResponse {
+                origin : dispatch.origin,
+                results : result_vec,
+                range : dispatch.range
+            });
         }
     })
 }
