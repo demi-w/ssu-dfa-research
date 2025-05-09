@@ -199,6 +199,8 @@ impl DFA {
             None => {
                 self.state_transitions
                     .push(vec![self.state_transitions.len(); self.symbol_set.length]);
+                self.accepting_states
+                    .push(false);
                 self.state_transitions.len() - 1
             }
         };
