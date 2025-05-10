@@ -20,3 +20,7 @@ futures = "0.3.28"
 wasm-bindgen-futures = "0.4"
 web-time = "1.1.0"
 web-sys = "0.3.64"
+
+[profile.release-with-debug]
+inherits = "release"
+debug = true
