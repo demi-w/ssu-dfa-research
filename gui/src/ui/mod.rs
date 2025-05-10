@@ -17,7 +17,7 @@ pub use error::{ErrorReporter,Error};
 
 pub type PathSender = Sender<(String,FileHandle,OpenItem)>;
 
-pub type PathReciever = Receiver<(String,FileHandle,OpenItem)>;
+pub type PathReceiver = Receiver<(String,FileHandle,OpenItem)>;
 
 
 

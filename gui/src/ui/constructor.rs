@@ -12,8 +12,8 @@ use super::{AvailableSolver, PrepPanel, Error};
 
 
 pub struct DFAConstructor {
-    dfa_reciever : Option<Receiver<(DFAStructure,SSStructure)>>,
-    phase_reciever : Option<Receiver<Duration>>,
+    dfa_receiver : Option<Receiver<(DFAStructure,SSStructure)>>,
+    phase_receiver : Option<Receiver<Duration>>,
     pub dfa_content : Option<(DFAStructure,SSStructure)>,
     pub last_solver : Option<SolverContents>,
     pub final_dfa : Option<DFA>,
@@ -44,8 +44,8 @@ impl DFAConstructor{
 
     pub fn new(e_reporter : Sender<Error>) -> Self {
         Self { 
-            dfa_reciever : None,
-            phase_reciever : None,
+            dfa_receiver : None,
+            phase_receiver : None,
             dfa_content : None,
             final_dfa : None,
             handle : None,
@@ -92,7 +92,7 @@ impl DFAConstructor{
         }
         //Phase messages loop
         loop {
-            match &self.phase_reciever {
+            match &self.phase_receiver {
                 Some(k_phase_recv) => match k_phase_recv.try_recv() {
                     Ok(message) => {
                         if let None = self.initialization_dur {
@@ -115,7 +115,7 @@ impl DFAConstructor{
         }
         //DFA messages loop
         loop {
-            match &self.dfa_reciever {
+            match &self.dfa_receiver {
                 Some(k_dfa_recv) => match k_dfa_recv.try_recv() {
                     Ok(message) => {
                         self.iteration_state_lens.push(message.0.len());
@@ -128,7 +128,7 @@ impl DFAConstructor{
                                     let event = self.dfa_content.as_ref().unwrap();
                                     self.final_dfa = Some(srs_to_dfa::solver::event_to_dfa(&event.0,&event.1, &self.last_solver.as_ref().unwrap().rules));
                                 }
-                                self.dfa_reciever = None;
+                                self.dfa_receiver = None;
                                 self.has_finished = true;
                             },
                             std::sync::mpsc::TryRecvError::Empty => {
@@ -208,15 +208,15 @@ impl DFAConstructor{
     #[cfg(not(target_arch = "wasm32"))]
     fn run_dfa_arch<S>(&mut self, solver : S, k : usize) where S : Solver{
         let (dfa_rx, phase_rx, temp_h) = solver.run_debug(k,vec![]); 
-        self.dfa_reciever = Some(dfa_rx);
-        self.phase_reciever = Some(phase_rx);
+        self.dfa_receiver = Some(dfa_rx);
+        self.phase_receiver = Some(phase_rx);
         self.handle = Some(temp_h);
     }
     #[cfg(target_arch = "wasm32")]
     fn run_dfa_arch<S>(&mut self, solver : S, k : usize) where S : Solver{
         let (dfa_rx, phase_rx) = solver.run_debug(k,vec![]); 
-        self.dfa_reciever = Some(dfa_rx);
-        self.phase_reciever = Some(phase_rx);
+        self.dfa_receiver = Some(dfa_rx);
+        self.phase_receiver = Some(phase_rx);
     }
     pub fn run_dfa(&mut self, solver : AvailableSolver, rules : Ruleset, goal : DFA, k : usize, verify_run : bool){
         

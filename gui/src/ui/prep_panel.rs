@@ -4,13 +4,13 @@ use egui::{Ui, RichText};
 
 use srs_to_dfa::{util::{DFA, Ruleset}, builder::*};
 
-use super::{open_file, OpenItem, PathSender, PathReciever, AvailableSolver, Error};
+use super::{open_file, OpenItem, PathSender, PathReceiver, AvailableSolver, Error};
 
 pub struct PrepPanel {
     pub srs_text : String,
     pub sig_k : usize,
     pub goal : DFA,
-    path_r : PathReciever,
+    path_r : PathReceiver,
     path_s : PathSender,
     ruleset_pick : ExampleRulesets,
     goal_pick : ExampleGoals,

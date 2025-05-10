@@ -182,8 +182,8 @@ impl Solver for MinkidSolver {
             }
 
             //Next, we BUILD the LINK GRAPH !!! (this should inspire fear)
-            //This also has some major room for effiency improvements imo
-            //but it wasn't really noticable for the subset implementation?
+            //This also has some major room for efficiency improvements imo
+            //but it wasn't really noticeable for the subset implementation?
             //will check perf later (ofc)
 
             //The range here can only possibly include elements max_input away from the diameter,
@@ -647,7 +647,7 @@ impl MinkidSolver {
             //    self.ss_link_graph[i].precomputed_ancestors.insert(nx);
             //}
             //Calculating valid DFA states
-            //old method for building accpeting states for each string -- disliked bc worse for both time/memory complexity
+            //old method for building accepting states for each string -- disliked bc worse for both time/memory complexity
 
             for start in 0..self.goal.state_transitions.len() {
                 for element in &self.ss_link_graph[i].original_idxs {
@@ -693,7 +693,7 @@ impl MinkidSolver {
         }
         result
     }
-    //notably sub-optimal -- i am keeping things readble first because I am gonna go cross-eyed if I pre-emptively optimize THIS
+    //notably sub-optimal -- i am keeping things readable first because I am gonna go cross-eyed if I preemptively optimize THIS
     //Returns true if minkids is modified
     /*
     fn add_to_minkids(&self, min_children : &mut HashSet<NodeIndex>, potential : NodeIndex) -> bool {
@@ -839,7 +839,7 @@ impl MinkidSolver {
             link_graph.remove_edge(*dead_edge);
         }
         //TODO: There are currently circumstances where death row isn't empty and the link isn't added
-        //This should only be possible if there's extraenous elements.
+        //This should only be possible if there's extraneous elements.
         (should_add, !death_row.is_empty())
     }
     fn minkids_to_tt(&self, sig_set: &Vec<Vec<SymbolIdx>>, minkids: &HashSet<NodeIndex>) -> BitVec {
