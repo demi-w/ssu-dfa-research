@@ -7,7 +7,6 @@ use std::time::Duration;
 
 use async_trait::async_trait;
 
-use crossbeam::queue::SegQueue;
 
 use crate::solver::Solver;
 use crate::util::{Ruleset, SymbolIdx, DFA};
@@ -16,8 +15,6 @@ use crate::SymbolSet;
 use super::Instant;
 use super::{DFAStructure, GenericSolver, SRSSolver, SSStructure};
 use crate::solver::srssolver::DomainError;
-
-use bitvec::prelude::*;
 
 #[derive(Clone)]
 pub struct BFSSolver<State = Vec<u8>, Input = String, Output = bool>
@@ -40,7 +37,7 @@ impl SRSSolver for BFSSolver<Vec<SymbolIdx>, String, bool> {
         &self.rules.as_ref().unwrap()
     }
 
-    fn new(mut ruleset: Ruleset, mut goal: DFA) -> Result<Self, DomainError> {
+    fn new(ruleset: Ruleset, goal: DFA) -> Result<Self, DomainError> {
         //Self::ensure_expansion(&mut ruleset,&mut goal);
         Ok(BFSSolver {
             rules: Some(ruleset),
@@ -89,7 +86,6 @@ where
         origin: State,
     ) -> DFA<Input, Output> {
         let init_begin_time = Instant::now();
-        let sig_set = self.symbol_set.build_sig_k(sig_k);
         let mut trans_table: Vec<Vec<usize>> = Vec::new(); //omg it's me !!!
         let mut table_reference = HashMap::<Vec<Output>, usize>::new();
 
@@ -110,7 +106,7 @@ where
             empty_copy.push(0);
         }
 
-        input.send(Dispatch{origin, k: sig_k, range : 0..self.symbol_set.sig_set_size(sig_k)});
+        input.send(Dispatch{origin, k: sig_k, range : 0..self.symbol_set.sig_set_size(sig_k)}).unwrap();
 
         let start_accepting = output.recv().unwrap().results;
         table_reference.insert(start_accepting.clone(), 0);
@@ -154,15 +150,15 @@ where
                         origin : new_board.clone(),
                         k : sig_k,
                         range : 0..chunk_cursor
-                    });
+                    }).unwrap();
                     chunks_dispatched+=1;
                     //dole out any additional chunks
-                    for chunk_idx in 1..chunks_per_sig_set {
+                    for _chunk_idx in 1..chunks_per_sig_set {
                         input.send(Dispatch {
                             origin : new_board.clone(),
                             k : sig_k,
                             range : chunk_cursor..chunk_cursor + chunk_length
-                        });
+                        }).unwrap();
                         chunks_dispatched+=1;
                         chunk_cursor += chunk_length;
                     }
@@ -262,8 +258,8 @@ where
         spmc::Sender<Dispatch<State>>,
         Receiver<DispatchResponse<State, Output>>,
     ) {
-        let (mut input_tx, input_rx) = spmc::channel::<Dispatch<State>>();
-        let (mut output_tx, output_rx)= std::sync::mpsc::channel();
+        let (input_tx, input_rx) = spmc::channel::<Dispatch<State>>();
+        let (output_tx, output_rx)= std::sync::mpsc::channel();
 
         for _ in 0..self.worker_threads {
             worker_thread(thread_translator.clone(), input_rx.clone(), output_tx.clone());
@@ -274,55 +270,6 @@ where
         for _ in 0..self.worker_threads {
             input.send(Dispatch{origin : State::default(), range : 0..usize::MAX, k : 0}).unwrap();
         }
-    }
-    fn board_to_next_batch(
-        &self,
-        board: &State,
-        sig_set: &Vec<Vec<SymbolIdx>>,
-        input: &Arc<SegQueue<(State, usize)>>,
-        output: &Arc<SegQueue<(Output, usize)>>,
-    ) -> Vec<(Vec<Output>, State)> {
-        let mut results = Vec::with_capacity(self.symbol_set.length);
-        for sym in 0..(self.symbol_set.length as SymbolIdx) {
-            let mut new_board = board.clone();
-            new_board = self.mutate(new_board, sym);
-            results.push((
-                self.sig_with_set_batch(&new_board, sig_set, input.clone(), output.clone()),
-                new_board,
-            ));
-        }
-        results
-    }
-    fn sig_with_set_batch(
-        &self,
-        board: &State,
-        sig_set: &Vec<Vec<SymbolIdx>>,
-        input: Arc<SegQueue<(State, usize)>>,
-        output: Arc<SegQueue<(Output, usize)>>,
-    ) -> Vec<Output> {
-        let mut result = vec![Output::default(); sig_set.len()];
-
-        for sig_element in sig_set.iter().enumerate() {
-            let mut new_board = board.clone();
-            for sig_in_element in sig_element.1 {
-                new_board = self.mutate(new_board, *sig_in_element);
-            }
-
-            input.push((new_board, sig_element.0));
-        }
-        let mut results_recieved = 0;
-        while results_recieved < sig_set.len() {
-            match output.pop() {
-                Some(output_result) => {
-                    result[output_result.1] = output_result.0;
-                    results_recieved += 1;
-                }
-                None => {
-                    std::thread::sleep(Duration::from_millis(10));
-                }
-            }
-        }
-        result
     }
 }
 
@@ -384,7 +331,7 @@ Output: std::marker::Send + std::marker::Sync + Clone + 'static + Default + std:
             if dispatch.range.end == usize::MAX {
                 return;
             }
-            let mut sig_set_iter = translator.get_sig_set(dispatch.origin.clone(),dispatch.k).clone();
+            let sig_set_iter = translator.get_sig_set(dispatch.origin.clone(),dispatch.k).clone();
             let mut sig_set_iter = sig_set_iter.skip(dispatch.range.start);
             let mut result_vec = vec![];
             for _ in dispatch.range.clone() {
@@ -394,7 +341,7 @@ Output: std::marker::Send + std::marker::Sync + Clone + 'static + Default + std:
                 origin : dispatch.origin,
                 results : result_vec,
                 range : dispatch.range
-            });
+            }).unwrap();
         }
     })
 }

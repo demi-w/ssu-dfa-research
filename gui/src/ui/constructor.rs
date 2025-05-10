@@ -179,7 +179,7 @@ impl DFAConstructor{
             if path.len() == 0 {
                 ui.label("This string matches the goal DFA without any SRS applications.");
             }else {
-                egui::containers::scroll_area::ScrollArea::vertical().id_source("solve_path").show(ui, |ui| {
+                egui::containers::scroll_area::ScrollArea::vertical().id_salt("solve_path").show(ui, |ui| {
                 ui.group(|ui| {
                     let start_str = self.last_solve_string.as_ref().unwrap();
 

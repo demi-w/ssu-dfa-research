@@ -1,20 +1,11 @@
 use std::{
     collections::{HashMap, HashSet, VecDeque},
-    fmt::write,
     hash::Hash,
-    io::{self, Write},
-    path::{self, Display},
-    sync::mpsc::{channel, Receiver, Sender},
 };
 
-use std::thread;
 
-use crate::{
-    test,
-    util::{Ruleset, SymbolIdx, SymbolSet, DFA},
-};
+use crate::util::{Ruleset, SymbolIdx, SymbolSet, DFA};
 
-use crate::solver::events::*;
 
 //mod generic_bases;
 
@@ -22,12 +13,9 @@ use petgraph::{
     graph::{DiGraph, NodeIndex},
     visit::EdgeRef,
 };
-use serde::Serialize;
 #[cfg(target_arch = "wasm32")]
 pub use web_time::Instant;
 
-#[cfg(not(target_arch = "wasm32"))]
-pub use std::time::Instant;
 
 use super::solver::Solver;
 
@@ -250,7 +238,7 @@ where
             }
         }
     }
-    fn build_rule_graph<'a>(&'a self, possible_dfa: &'a DFA) -> DiGraph<usize, RuleGraphRoot> {
+    fn build_rule_graph<'a>(&'a self, possible_dfa: &'a DFA) -> DiGraph<usize, RuleGraphRoot<'a>> {
         let mut rule_graph = DiGraph::<usize, RuleGraphRoot>::new();
         //Add a node in the rule graph for each state
         for index in 0..possible_dfa.state_transitions.len() {
@@ -337,7 +325,7 @@ where
     fn is_superset<'a>(
         &'a self,
         test_dfa: &'a DFA,
-    ) -> Result<(), Option<(RuleGraphRoot, usize, usize)>> {
+    ) -> Result<(), Option<(RuleGraphRoot<'a>, usize, usize)>> {
         if !(test_dfa >= self.get_goal()) {
             return Err(None);
         }
@@ -434,7 +422,7 @@ where
         }
     }
     fn build_path_graph(&self, possible_dfa: &DFA) -> Vec<Vec<Path>> {
-        let hackLambda = |list: &Vec<usize>| {
+        let hack_lambda = |list: &Vec<usize>| {
             let mut start = "[".to_owned();
             for (idx, i) in list.iter().enumerate() {
                 start.push('q');
@@ -477,7 +465,7 @@ where
                     paths[old_path.0][old_path.1].buffer_origin,
                     paths[old_path.0][old_path.1].buffer,
                     old_path.0,
-                    hackLambda(&paths[old_path.0][old_path.1].rhs_connections)
+                    hack_lambda(&paths[old_path.0][old_path.1].rhs_connections)
                 );
                 for symbol in 0..possible_dfa.symbol_set.length {
                     println!(
@@ -605,11 +593,11 @@ where
                     }
 
                     if !paths[dest_idx].contains(&new_path) {
-                        println!("\n##### {{Origin:q{}, Buffer:{:?}, LHS: q{}, RHS: {}}} is new! Added to paths",new_path.buffer_origin,new_path.buffer,dest_idx,hackLambda(&new_path.rhs_connections));
+                        println!("\n##### {{Origin:q{}, Buffer:{:?}, LHS: q{}, RHS: {}}} is new! Added to paths",new_path.buffer_origin,new_path.buffer,dest_idx,hack_lambda(&new_path.rhs_connections));
                         new_paths.push((dest_idx, paths[dest_idx].len()));
                         paths[dest_idx].push(new_path);
                     } else {
-                        println!("\n##### {{Origin:q{}, Buffer:{:?}, LHS: q{}, RHS: {}}} already exists -- nothing new created here",new_path.buffer_origin,new_path.buffer,dest_idx,hackLambda(&new_path.rhs_connections));
+                        println!("\n##### {{Origin:q{}, Buffer:{:?}, LHS: q{}, RHS: {}}} already exists -- nothing new created here",new_path.buffer_origin,new_path.buffer,dest_idx,hack_lambda(&new_path.rhs_connections));
                     }
                 }
             }
@@ -626,7 +614,7 @@ where
             return false;
         }
         //Make sure that terminal states have their own state associated with them.
-        let expanded_dfa = possible_dfa.dfa_product(&no_rule_dfa, |s, o| *s);
+        let expanded_dfa = possible_dfa.dfa_product(&no_rule_dfa, |s, _o| *s);
 
         //Ensure that there are no cycles in the DFA (if they exist, proof fails & it is guaranteed that DFA is not minimal)
         let rule_graph = self.build_rule_graph(&expanded_dfa);
@@ -668,7 +656,7 @@ where
     fn correct_audit<'a>(&self, possible_dfa: &DFA, emit_steps: bool) -> ProofAudit {
         //Make sure that all terminal states have their own state associated with them.
         let no_rule_dfa = self.build_no_rule_dfa();
-        let expanded_dfa = possible_dfa.dfa_product(&no_rule_dfa, |s, o| *s);
+        let expanded_dfa = possible_dfa.dfa_product(&no_rule_dfa, |s, _o| *s);
 
         let path_graph = self.build_path_graph(&expanded_dfa);
 
@@ -1086,7 +1074,6 @@ type ProofIndex = usize;
 #[derive(Debug, PartialEq, Eq, Clone)]
 enum ProofElement {
     AddProperty(ProofProperty, Vec<ProofIndex>),
-    RemoveProperty(ProofProperty, Vec<ProofIndex>),
     State(usize),
     Path(ProofIndex, Vec<ProofIndex>),
 }
@@ -1094,7 +1081,6 @@ enum ProofElement {
 enum ProofProperty {
     Accepting(bool),
     Correct,
-    Coherent(bool),
 }
 
 #[derive(Debug, PartialEq, Eq)]
@@ -1134,10 +1120,6 @@ impl ProofAudit {
         if let ProofElement::AddProperty(ref prop, ref affected) = proof_step.element {
             for i in affected {
                 self.properties[*i].insert(prop.clone());
-            }
-        } else if let ProofElement::RemoveProperty(ref prop, ref affected) = proof_step.element {
-            for i in affected {
-                self.properties[*i].remove(prop);
             }
         }
         if should_emit {

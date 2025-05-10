@@ -1,4 +1,4 @@
-use std::collections::{HashMap, HashSet};
+use std::collections::HashMap;
 
 use bitvec::vec::BitVec;
 use petgraph::prelude::DiGraph;
@@ -44,7 +44,7 @@ impl SSStructure {
         let mut result = vec![];
         match self {
             Self::Boolean(vec) => {
-                for (idx, ss) in vec.iter().enumerate() {
+                for (_idx, ss) in vec.iter().enumerate() {
                     result.push(ss[0]);
                 }
             }

@@ -37,8 +37,8 @@ enum ExampleGoals {
     All0,
     OnlyOne1,
     OnlyOne2,
-    OneDPegResult,
     All000,
+    OneDPegResult,
     OneDPegResultxThree,
     Custom(String)
 }
@@ -179,7 +179,7 @@ impl PrepPanel {
         });
         ui.horizontal(|ui|{
         ui.label("Select solver");
-        egui::ComboBox::from_id_source("Select solver")
+        egui::ComboBox::from_id_salt("Select solver")
             .selected_text(format!("{}", self.solver_type))
             .show_ui(ui, |ui| {
                 ui.label("Suggested");
@@ -201,7 +201,7 @@ impl PrepPanel {
                 open_file(OpenItem::Goal, self.path_s.clone());
             }
             ui.menu_button("Load example goal", |ui| {
-                for i in vec![ExampleGoals::All0, ExampleGoals::OnlyOne1, ExampleGoals::OnlyOne2, ExampleGoals::All000,ExampleGoals::OneDPegResultxThree] {
+                for i in vec![ExampleGoals::All0, ExampleGoals::OnlyOne1, ExampleGoals::OnlyOne2, ExampleGoals::All000,ExampleGoals::OneDPegResult,ExampleGoals::OneDPegResultxThree] {
                     if ui.button(i.to_string()).clicked() {
                         self.goal_pick = i;
                         self.goal = self.goal_pick.to_dfa();

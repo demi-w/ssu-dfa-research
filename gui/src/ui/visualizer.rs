@@ -1,18 +1,18 @@
-use std::{time::Duration};
+use std::time::Duration;
 
 use egui::{Ui, Vec2};
 
 use egui_plot::{Legend, Plot, Line};
 
 
-use super::{DFAConstructor, PrepPanel};
+use super::DFAConstructor;
 use crate::ui::Instant;
 
 #[derive(Default)]
 pub struct CVisualizer {}
 
 impl CVisualizer {
-    pub fn update(&mut self, ui : &mut Ui, constructor : &DFAConstructor, prep_panel : &PrepPanel) {
+    pub fn update(&mut self, ui : &mut Ui, constructor : &DFAConstructor) {
         Plot::new("my_plot")
             .legend(Legend::default())
             .view_aspect(2.0)

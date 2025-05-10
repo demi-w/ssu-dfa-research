@@ -1,9 +1,7 @@
 use std::any::type_name;
-use std::fs::File;
 
 use crate::builder::*;
 use crate::solver::*;
-use crate::util::DFA;
 #[cfg(not(target_arch = "wasm32"))]
 pub fn test_standard_examples<S: SRSSolver>() {
     let solve_test = build_default1dpeg::<S>().unwrap();

@@ -1,18 +1,5 @@
-use std::{
-    collections::{HashMap, HashSet, VecDeque},
-    fmt::write,
-    hash::Hash,
-    io::{self, Write},
-    path::{self, Display},
-    sync::mpsc::{channel, Receiver, Sender},
-};
 
-use std::thread;
 
-use crate::{
-    test,
-    util::{Ruleset, SymbolIdx, SymbolSet, DFA},
-};
 
 pub use self::events::*;
 mod events;
@@ -37,11 +24,6 @@ mod srssolver;
 pub use self::srssolver::*;
 mod genericsolver;
 pub use self::genericsolver::*;
-use petgraph::{
-    graph::{DiGraph, NodeIndex},
-    visit::EdgeRef,
-};
-use serde::Serialize;
 #[cfg(target_arch = "wasm32")]
 pub use web_time::Instant;
 

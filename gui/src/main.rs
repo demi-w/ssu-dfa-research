@@ -98,7 +98,7 @@ impl eframe::App for MyApp {
         });
         egui::Window::new("DFA Generator").collapsible(false).open(&mut self.open_generator_window).show(ctx, |ui| {
             ui.add_enabled_ui(!self.e_reporter.error_onscreen, |ui|{
-            self.c_visualizer.update(ui, &self.dfa_constructor, &self.prep_panel);
+            self.c_visualizer.update(ui, &self.dfa_constructor);
             ui.add_enabled_ui((!self.dfa_constructor.has_started && !self.dfa_constructor.has_finished) || self.dfa_constructor.has_finished, |ui|{
             ui.horizontal_wrapped(|ui|{
             if self.prep_panel.solve_window_update(ui) { 

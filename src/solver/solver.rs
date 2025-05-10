@@ -1,29 +1,17 @@
 use std::{
-    collections::{HashMap, HashSet, VecDeque},
-    fmt::write,
-    hash::Hash,
-    io::{self, Write},
+    io::{Write},
     marker::PhantomData,
-    path::{self, Display},
     sync::mpsc::{channel, Receiver, Sender},
 };
 
 use std::thread;
 
-use crate::{
-    test,
-    util::{Ruleset, SymbolIdx, SymbolSet, DFA},
-};
+use crate::util::{SymbolIdx, SymbolSet, DFA};
 
 use crate::solver::events::*;
 
 //mod generic_bases;
 
-use petgraph::{
-    graph::{DiGraph, NodeIndex},
-    visit::EdgeRef,
-};
-use serde::Serialize;
 #[cfg(target_arch = "wasm32")]
 pub use web_time::Instant;
 pub trait Solver<State = Vec<SymbolIdx>, Input = String, Output = bool>
@@ -138,7 +126,7 @@ where
     fn get_symset(&self) -> &SymbolSet<Input>;
     fn mutate(&self, state: State, input: SymbolIdx) -> State;
     fn evaluate<'a, 'b>(&'a self, state: &'b State) -> Output;
-    fn get_sig_set<'a>(&'a self, origin: State, k: usize) -> StateIter<Self, State, Input, Output> {
+    fn get_sig_set<'a>(&'a self, origin: State, k: usize) -> StateIter<'a,Self, State, Input, Output> {
         StateIter {
             solver: self,
             k: k,

@@ -3,9 +3,6 @@ use serde::{de::DeserializeOwned, Deserialize, Serialize};
 use std::{
     collections::{HashMap, HashSet},
     io::Read,
-    marker::PhantomData,
-    ops::{Deref, IndexMut},
-    slice::SliceIndex,
 };
 use xml::{
     reader::EventReader,
@@ -13,7 +10,7 @@ use xml::{
 };
 
 use bitvec::prelude::*;
-use serde_json::{value::Index, Result};
+use serde_json::Result;
 use std::io::Write;
 
 #[derive(Clone, Serialize, Deserialize)]
@@ -25,21 +22,7 @@ pub struct DFA<Input = String, Output = bool> {
     pub symbol_set: SymbolSet<Input>,
 }
 
-trait GetDiscriminant {
-    fn discriminant(&self) -> usize;
-    const DISCRIMINANT_LEN: usize;
-}
 
-impl GetDiscriminant for bool {
-    fn discriminant(&self) -> usize {
-        if *self {
-            1
-        } else {
-            0
-        }
-    }
-    const DISCRIMINANT_LEN: usize = 2;
-}
 enum JFLAPTrans {
     From,
     To,
@@ -58,7 +41,6 @@ type File = FileHandle;
 #[cfg(target_arch = "wasm32")]
 use wasm_bindgen_futures;
 
-use super::symset;
 
 impl<Input, Output> PartialOrd for DFA<Input, Output>
 where
@@ -509,7 +491,7 @@ where
             }
         }
         let mut new_accepting = Vec::new();
-        for (p_index, partition) in new_partitions.iter().enumerate() {
+        for (_p_index, partition) in new_partitions.iter().enumerate() {
             new_accepting.push(self.accepting_states[partition[0]].clone());
         }
 

@@ -1,7 +1,6 @@
-use std::collections::HashSet;
 
 use crate::{
-    solver::{DomainError, SRSSolver, Solver},
+    solver::{DomainError, SRSSolver},
     util::{Ruleset, SymbolIdx, SymbolSet, DFA},
 };
 

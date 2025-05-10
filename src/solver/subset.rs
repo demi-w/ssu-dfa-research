@@ -143,7 +143,7 @@ impl Solver for SubsetSolver {
             self.solved_yet.resize(new_states, bitvec![0;sig_set.len()]);
 
             //next is adding all edges appropriately to the graph.
-            //this can be optimized substantially but i don't wanna do it pre-emptively :)
+            //this can be optimized substantially but i don't wanna do it preemptively :)
             let mut link_graph = DiGraph::<usize, ()>::new();
 
             for index in 0..(last_known + new_states) {
@@ -381,7 +381,7 @@ impl Solver for SubsetSolver {
             }
         }
         let mut accepting_states = Vec::new();
-        for (key, val) in self.unique_sigs.iter() {
+        for (key, _val) in self.unique_sigs.iter() {
             accepting_states.push(key[0])
         }
         let trans_table = self.trans_table.clone();
