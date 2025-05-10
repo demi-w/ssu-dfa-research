@@ -7,9 +7,9 @@ authors = ["Demi Willison <demiwillison@gmail.com>"]
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-bitvec = "1"
-crossbeam = "0.8.2"
-petgraph = "0.6.3"
+bitvec = "1.0.1"
+crossbeam = "0.8.4"
+petgraph = "0.8.1"
 xml-rs = "0.8.4"
 serde_json = "1.0"
 serde = { version = "1.0.160", features = ["derive"] }

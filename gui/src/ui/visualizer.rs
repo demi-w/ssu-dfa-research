@@ -1,6 +1,8 @@
 use std::{time::Duration};
 
-use egui::{Ui, plot::{Legend, Plot, Line}, Vec2};
+use egui::{Ui, Vec2};
+
+use egui_plot::{Legend, Plot, Line};
 
 
 use super::{DFAConstructor, PrepPanel};
@@ -14,8 +16,6 @@ impl CVisualizer {
         Plot::new("my_plot")
             .legend(Legend::default())
             .view_aspect(2.0)
-            .auto_bounds_x()
-            .auto_bounds_y()
             .include_x(0.0)
             .include_y(0.0)
             .allow_boxed_zoom(false)
@@ -37,7 +37,7 @@ impl CVisualizer {
                         if !constructor.has_finished && constructor.phase_idx == i {
                             points.push([points.len() as f64,(Instant::now() - constructor.last_phase_msg).as_secs_f64()]);
                         }
-                        plot_ui.line(Line::new(points).name(name));
+                        plot_ui.line(Line::new("Time to execute (in seconds)",points).name(name));
                     }
                 }
             }
